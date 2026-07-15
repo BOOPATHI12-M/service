@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard · Laptop Control</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header class="topbar">
+        <span class="brand">Laptop Control</span>
+        <span class="spacer"></span>
+        <button id="clearBtn" class="ghost">Clear queue</button>
+    </header>
+
+    <main class="wrap">
+        <section class="tools">
+            <button class="tool" data-tool="1"><span class="n">1</span>Screenshot</button>
+            <button class="tool" data-tool="2"><span class="n">2</span>CPU Info</button>
+            <button class="tool" data-tool="3"><span class="n">3</span>Camera</button>
+            <button class="tool" data-tool="4"><span class="n">4</span>Browser History</button>
+            <button class="tool" data-tool="5"><span class="n">5</span>Send Email</button>
+            <button class="tool" data-tool="6"><span class="n">6</span>Screen Stream</button>
+        </section>
+
+        <!-- Email form (shown only when tool 5 is picked) -->
+        <section id="emailForm" class="panel" hidden>
+            <h2>Send Email</h2>
+            <label>To</label>      <input id="mailTo" type="email" placeholder="recipient@example.com">
+            <label>Subject</label> <input id="mailSubject" type="text" placeholder="Subject">
+            <label>Body</label>    <textarea id="mailBody" rows="4" placeholder="Message..."></textarea>
+            <div class="row">
+                <button id="mailSend">Send</button>
+                <button id="mailCancel" class="ghost">Cancel</button>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="status-row">
+                <h2>Result</h2>
+                <span id="status" class="status"></span>
+                <span class="spacer"></span>
+                <label class="stream-toggle" hidden>
+                    <input type="checkbox" id="streamLoop"> keep streaming
+                </label>
+            </div>
+            <div id="result" class="result">Pick a tool above to run it on the laptop.</div>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

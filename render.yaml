@@ -1,0 +1,13 @@
+# Render Blueprint — deploys this folder as one always-on Node web service.
+# Render auto-detects this file when you create a "Blueprint" from the repo.
+services:
+  - type: web
+    name: laptop-control
+    runtime: node
+    plan: free                 # free instance (spins down when idle; see notes)
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /
+    envVars:
+      - key: AGENT_KEY
+        generateValue: true    # Render generates a random secret; copy it into agent.py
