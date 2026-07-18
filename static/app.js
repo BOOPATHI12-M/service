@@ -8,7 +8,7 @@ const streamLoop = document.getElementById("streamLoop");
 
 const TOOL_NAMES = {
     1: "Screenshot", 2: "CPU Info", 3: "Camera",
-    4: "Browser History", 5: "Send Email", 6: "Screen Stream",
+    4: "Browser History", 5: "Send Email", 6: "Screen Stream",7: "USB Devices",
 };
 
 let streaming = false;   // guard so tool 6 doesn't stack loops
