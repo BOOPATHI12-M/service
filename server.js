@@ -119,6 +119,9 @@ app.get("/webrtc", (req, res) => {
 app.get("/terminal", (req, res) => {
     res.sendFile(path.join(__dirname, "templates", "safe-terminal.html"));
 });
+app.get("/live-camera", (req, res) => {
+    res.sendFile(path.join(__dirname, "templates", "live-camera.html"));
+});
 app.get("/api/result/:id", (req, res) => {
   const result = popResult(Number(req.params.id)); // returns + auto-removes when ready
   if (result === null) return res.json({ ready: false });

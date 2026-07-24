@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Camera · Laptop Control</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; font-family:Arial, sans-serif; }
+body { background:#0c0c0c; color:#e6e6e6; min-height:100vh; display:flex; flex-direction:column; align-items:center; }
+.header {
+    width:100%; height:56px; background:#1a1a1a; border-bottom:1px solid #333;
+    display:flex; align-items:center; justify-content:space-between; padding:0 20px;
+}
+.header h2 { font-size:17px; color:#00ff99; }
+.header .meta { font-size:12px; color:#888; }
+.stage { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px; gap:16px; width:100%; }
+#view {
+    max-width:min(1100px, 95vw); width:auto; border:2px solid #333; border-radius:10px;
+    background:#000; aspect-ratio:16/9; object-fit:contain;
+}
+.controls { display:flex; align-items:center; gap:12px; }
+button {
+    padding:10px 22px; font-size:15px; border-radius:6px; cursor:pointer;
+    border:1px solid #555; background:#222; color:#fff;
+}
+button:hover { background:#333; }
+button.primary { background:#00a86b; border-color:#00a86b; }
+button.primary:hover { background:#00c07d; }
+button:disabled { opacity:.5; cursor:not-allowed; }
+.dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:#666; margin-right:6px; vertical-align:middle; }
+.dot.live { background:#ff4d4d; box-shadow:0 0 8px #ff4d4d; }
+#status { font-size:13px; color:#aaa; }
+</style>
+</head>
+<body>
+<div class="header">
+    <h2><span id="dot" class="dot"></span>Live Camera</h2>
+    <span class="meta">Authorized monitoring · frames polled from the agent</span>
+</div>
+
+<div class="stage">
+    <img id="view" alt="camera feed">
+    <div class="controls">
+        <button id="toggle" class="primary">Start</button>
+        <span id="status">Idle</span>
+    </div>
+</div>
+
+<script>
+const view   = document.getElementById("view");
+const toggle = document.getElementById("toggle");
+const statusEl = document.getElementById("status");
+const dot    = document.getElementById("dot");
+
+let streaming = false;
+let frames = 0;
+let startedAt = 0;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Request one camera frame (tool 8) and wait for the agent's result.
+async function grabFrame() {
+    const res = await fetch("/api/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool_no: 8, payload: null }),
+    });
+    if (!res.ok) return null;
+    const { command_id } = await res.json();
+
+    for (let i = 0; i < 30; i++) {
+        const r = await (await fetch(`/api/result/${command_id}`)).json();
+        if (r.ready) return r;
+        await sleep(500);
+    }
+    return null;
+}
+
+async function loop() {
+    while (streaming) {
+        const r = await grabFrame();
+        if (!streaming) break;
+        if (!r) { statusEl.textContent = "No response — is the agent running?"; continue; }
+        if (r.content_type === "image") {
+            view.src = r.data.startsWith("data:") ? r.data : "data:image/jpeg;base64," + r.data;
+            frames++;
+            const secs = (Date.now() - startedAt) / 1000;
+            statusEl.textContent = `Live · ${frames} frames · ${(frames / secs).toFixed(1)} fps`;
+        } else {
+            statusEl.textContent = r.data;   // an error string from the agent
+        }
+    }
+}
+
+toggle.addEventListener("click", () => {
+    streaming = !streaming;
+    if (streaming) {
+        frames = 0; startedAt = Date.now();
+        toggle.textContent = "Stop";
+        dot.classList.add("live");
+        statusEl.textContent = "Starting…";
+        loop();
+    } else {
+        toggle.textContent = "Start";
+        dot.classList.remove("live");
+        statusEl.textContent = "Stopped";
+    }
+});
+</script>
+</body>
+</html>

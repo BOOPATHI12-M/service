@@ -117,7 +117,7 @@ document.querySelectorAll(".tool").forEach((btn) => {
 
         if (toolNo === 6) { startStream(); return; }
         if (toolNo === 8) {
-             window.open("/webrtc", "_blank");
+             window.open("/live-camera", "_blank");
              return;}
         if (toolNo === 9) {                    // open the Safe Terminal in a new tab
              window.open("/terminal", "_blank");

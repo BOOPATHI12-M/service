@@ -142,6 +142,38 @@ def tool_camera():
     finally:
         cap.release()
 
+# Kept-open camera handle so live streaming doesn't reopen the device each
+# frame (reopening is slow and makes the camera light flicker).
+_camera_cap = None
+
+
+def tool_camera_stream():
+    """8 — one LIVE frame from a kept-open camera -> base64 JPEG.
+
+    The live-camera page re-requests this repeatedly to form a stream. The
+    capture device stays open between calls for speed; it is released only if
+    it stops working. Polling is sequential, so there is no race on the handle.
+    """
+    import cv2
+    global _camera_cap
+
+    if _camera_cap is None or not _camera_cap.isOpened():
+        _camera_cap = cv2.VideoCapture(0)
+
+    if not _camera_cap.isOpened():
+        _camera_cap = None
+        return "text", "Error: could not access the camera."
+
+    ok, frame = _camera_cap.read()
+    if not ok:
+        _camera_cap.release()
+        _camera_cap = None
+        return "text", "Error: failed to grab a frame."
+
+    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    return "image", "data:image/jpeg;base64," + b64(buf.tobytes())
+
+
 def tool_usb():
 
     drives = []
@@ -341,6 +373,7 @@ DISPATCH = {
     5: lambda payload: tool_email(payload),
     6: lambda payload: tool_screen(),
     7: lambda payload: tool_usb(),
+    8: lambda payload: tool_camera_stream(),
     9: lambda payload: tool_safe_terminal(payload),
 }
 
