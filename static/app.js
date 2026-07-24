@@ -44,8 +44,9 @@ async function runTool(toolNo, payload = null) {
     return result;
 }
 
-async function pollResult(commandId, { attempts = 60, interval = 1000 } = {}) {
+async function pollResult(commandId, { attempts = 80, interval = 300, shouldStop = null } = {}) {
     for (let i = 0; i < attempts; i++) {
+        if (shouldStop && shouldStop()) return null;   // bail the instant we're told to stop
         const res = await fetch(`/api/result/${commandId}`);
         const data = await res.json();
         if (data.ready) {
@@ -140,15 +141,30 @@ document.getElementById("mailSend").addEventListener("click", async () => {
 });
 document.getElementById("mailCancel").addEventListener("click", () => { emailForm.hidden = true; });
 
-// ---- screen "stream": re-request a frame while the toggle is on ------------
+// ---- screen "stream": re-request a frame while streaming is on -------------
+// Clicking tool 6 again (or unchecking "keep streaming") stops it immediately.
 async function startStream() {
-    if (streaming) return;
+    if (streaming) { streaming = false; setStatus("Stream stopped", ""); return; }  // toggle off
     streaming = true;
+    setStatus("Streaming…", "busy");
     do {
-        const result = await runTool(6);
+        let commandId;
+        try {
+            const res = await fetch("/api/command", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ tool_no: 6, payload: null }),
+            });
+            if (!res.ok) break;
+            commandId = (await res.json()).command_id;
+        } catch { break; }
+        // fast polling that aborts the moment streaming is turned off
+        const result = await pollResult(commandId, { interval: 250, shouldStop: () => !streaming });
+        if (!streaming) break;
         if (!result) break;                    // error/timeout stops the loop
     } while (streamLoop.checked);
     streaming = false;
+    setStatus("Stream stopped", "");
 }
 
 // ---- USB monitor: pop a toast when a drive is plugged in / removed ---------
@@ -188,12 +204,13 @@ async function usbSnapshot() {
     if (!res.ok) return null;
     const { command_id } = await res.json();
     for (let i = 0; i < 20; i++) {
+        if (!usbWatching) return null;       // stop was pressed — bail immediately
         const r = await (await fetch(`/api/result/${command_id}`)).json();
         if (r.ready) {
             if (r.content_type === "json") { try { return JSON.parse(r.data); } catch { return []; } }
             return [];                       // text reply => no drives
         }
-        await sleep(400);
+        await sleep(300);
     }
     return null;
 }

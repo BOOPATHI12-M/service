@@ -68,10 +68,11 @@ async function grabFrame() {
     if (!res.ok) return null;
     const { command_id } = await res.json();
 
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 40; i++) {
+        if (!streaming) return null;          // Stop pressed — bail immediately
         const r = await (await fetch(`/api/result/${command_id}`)).json();
         if (r.ready) return r;
-        await sleep(500);
+        await sleep(250);
     }
     return null;
 }

