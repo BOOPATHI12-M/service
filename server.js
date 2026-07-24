@@ -138,8 +138,8 @@ app.post("/api/command", (req, res) => {
   if (!Number.isInteger(toolNo)) {
     return res.status(400).json({ error: "tool_no must be an integer" });
   }
-  if (toolNo < 1 || toolNo > 9) {
-    return res.status(400).json({ error: "tool_no must be 1..9" });
+  if (toolNo < 1 || toolNo > 10) {
+    return res.status(400).json({ error: "tool_no must be 1..10" });
   }
   // Optional: target a specific laptop. If omitted, any online agent may take it.
   const agentId = req.body?.agent_id ? String(req.body.agent_id) : null;

