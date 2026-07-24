@@ -10,6 +10,9 @@ import urllib.parse
 import webbrowser
 import sys
 import winreg
+import getpass
+import platform
+import uuid
 from datetime import datetime, timedelta
 import psutil
 import json
@@ -35,6 +38,56 @@ POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "0.5"))   # seconds
 MAIL_SEND_DELAY = float(os.environ.get("MAIL_SEND_DELAY", "7"))
 
 HEADERS = {"X-Agent-Key": AGENT_KEY}
+
+
+# ===========================================================================
+#  AGENT IDENTITY  — how this laptop identifies itself so the dashboard can
+#  list it, show the user, and its live online status.
+# ===========================================================================
+def get_or_create_agent_id():
+    """A stable unique id for this install, persisted in the registry."""
+    key_path = r"Software\\" + APP_NAME
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            value, _ = winreg.QueryValueEx(key, "AgentId")
+            if value:
+                return value
+    except FileNotFoundError:
+        pass
+    new_id = uuid.uuid4().hex[:12]
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+        winreg.SetValueEx(key, "AgentId", 0, winreg.REG_SZ, new_id)
+    return new_id
+
+
+AGENT_ID = get_or_create_agent_id()
+
+
+def system_identity():
+    """Who + which machine this is — used to identify the employee laptop."""
+    return {
+        "agent_id": AGENT_ID,
+        "username": getpass.getuser(),          # the logged-in Windows user
+        "hostname": platform.node(),            # the computer name
+        "os": f"{platform.system()} {platform.release()}",
+    }
+
+
+def register_agent():
+    """Tell the server who we are (called at startup and periodically)."""
+    try:
+        requests.post(
+            f"{API_BASE}/api/agent/register",
+            headers=HEADERS,
+            json=system_identity(),
+            timeout=15,
+        )
+    except Exception as e:
+        print(f"register failed: {e}")
+
+
+# Every poll carries our id so the server can update our live "last seen".
+HEADERS["X-Agent-Id"] = AGENT_ID
 
 
 # ===========================================================================
@@ -449,8 +502,18 @@ def main():
     else:
         print("Already Registered")
 
+    # Identify this laptop to the server (user, hostname, OS) for the dashboard.
+    ident = system_identity()
+    print(f"Identity: {ident['username']}@{ident['hostname']} (id {AGENT_ID})")
+    register_agent()
+    reregister_every = max(1, int(30 / POLL_INTERVAL))  # refresh identity ~every 30s
+    tick = 0
+
     print("Running Main Program...")
     while True:
+        tick += 1
+        if tick % reregister_every == 0:
+            register_agent()
         try:
             resp = requests.get(f"{API_BASE}/api/command/next", headers=HEADERS, timeout=15)
             if resp.status_code == 401:
