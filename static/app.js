@@ -12,8 +12,6 @@ const TOOL_NAMES = {
     9: "Safe Terminal",
 };
 
-const terminalForm = document.getElementById("terminalForm");
-
 let streaming = false;   // guard so tool 6 doesn't stack loops
 
 function setStatus(text, cls = "") {
@@ -113,15 +111,16 @@ document.querySelectorAll(".tool").forEach((btn) => {
     btn.addEventListener("click", async () => {
         const toolNo = Number(btn.dataset.tool);
         emailForm.hidden = toolNo !== 5;
-        terminalForm.hidden = toolNo !== 9;
         streamToggleWrap.hidden = toolNo !== 6;
 
         if (toolNo === 5) { return; }          // wait for the email form's Send
-        if (toolNo === 9) { document.getElementById("termCmd").focus(); return; } // wait for Run/Enter
 
         if (toolNo === 6) { startStream(); return; }
         if (toolNo === 8) {
              window.open("/webrtc", "_blank");
+             return;}
+        if (toolNo === 9) {                    // open the Safe Terminal in a new tab
+             window.open("/terminal", "_blank");
              return;}
         await runTool(toolNo);
     });
@@ -139,20 +138,6 @@ document.getElementById("mailSend").addEventListener("click", async () => {
     await runTool(5, payload);
 });
 document.getElementById("mailCancel").addEventListener("click", () => { emailForm.hidden = true; });
-
-// ---- safe terminal: send one whitelisted command (tool 9) ------------------
-async function runTerminalCommand() {
-    const input = document.getElementById("termCmd");
-    const command = input.value.trim();
-    if (!command) { setStatus("Enter a command", "err"); return; }
-    input.value = "";
-    await runTool(9, { command });
-    input.focus();                          // ready for the next command
-}
-document.getElementById("termRun").addEventListener("click", runTerminalCommand);
-document.getElementById("termCmd").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") runTerminalCommand();
-});
 
 // ---- screen "stream": re-request a frame while the toggle is on ------------
 async function startStream() {
