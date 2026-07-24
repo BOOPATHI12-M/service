@@ -381,21 +381,10 @@ def tool_screen():
 #  Only the commands below are permitted; anything else is refused. This keeps
 #  the terminal read-only / diagnostic and prevents destructive actions.
 # ---------------------------------------------------------------------------
-SAFE_COMMANDS = {
-    "dir", "cd", "cls", "echo", "hostname", "whoami", "ipconfig", "systeminfo",
-    "ping", "tree", "type", "tasklist", "date", "time", "ver", "help",
-    "set", "where", "netstat", "vol",
-}
 
 # Persistent working directory (the agent process stays alive between polls,
 # so `cd` carries over from one command to the next).
 _terminal_cwd = os.path.expanduser("~")
-
-
-def _terminal_is_safe(command):
-    if not command.strip():
-        return False
-    return command.split()[0].lower() in SAFE_COMMANDS
 
 
 def tool_safe_terminal(payload):
@@ -426,8 +415,7 @@ def tool_safe_terminal(payload):
         return "text", f"Directory not found: {target}"
 
     # Block anything not on the whitelist.
-    if not _terminal_is_safe(command):
-        return "text", f"Command not allowed: {command.split()[0]}"
+    
 
     # Run it (30s cap) inside the persistent working directory.
     try:

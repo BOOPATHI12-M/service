@@ -28,10 +28,16 @@ async function loadDevices() {
     const list = data.agents || [];
     const box = document.getElementById("devices");
 
+    // top-bar online counter
+    const countEl = document.getElementById("agentCount");
+    if (countEl) countEl.textContent = list.filter((a) => a.online).length;
+
     if (!list.length) {
-        box.innerHTML = '<div class="devices-empty">No laptops have connected yet. Start the agent on an employee machine.</div>';
+        box.innerHTML = '<div class="devices-empty">No laptops connected yet. Start the agent on an employee machine.</div>';
         selectedAgentId = null;
         document.getElementById("selectedName").textContent = "— (no laptop selected)";
+        const dot = document.getElementById("targetDot");
+        if (dot) dot.classList.remove("online");
         return;
     }
 
@@ -65,6 +71,8 @@ function selectAgent(a) {
     selectedAgentId = a.id;
     const label = `${a.username || "unknown"} @ ${a.hostname || a.id}`;
     document.getElementById("selectedName").textContent = label + (a.online ? "" : " (offline)");
+    const dot = document.getElementById("targetDot");
+    if (dot) dot.classList.toggle("online", !!a.online);
 }
 
 function setStatus(text, cls = "") {
