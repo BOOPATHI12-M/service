@@ -175,23 +175,31 @@ def tool_camera_stream():
 
 
 def tool_usb():
+    """7 — current removable (USB) drives as a JSON array (empty [] if none).
 
+    Always returns a JSON array so the USB monitor page can poll this and
+    detect changes: a drive appearing = plugged in, disappearing = removed.
+    """
     drives = []
 
-    for part in psutil.disk_partitions():
+    for part in psutil.disk_partitions(all=False):
 
         if "removable" in part.opts.lower():
 
-            drives.append({
+            info = {
                 "drive": part.device,
                 "mount": part.mountpoint,
-                "filesystem": part.fstype
-            })
+                "filesystem": part.fstype or "",
+            }
+            try:
+                usage = psutil.disk_usage(part.mountpoint)
+                info["total_gb"] = round(usage.total / (1024 ** 3), 2)
+                info["used_gb"] = round(usage.used / (1024 ** 3), 2)
+            except Exception:
+                pass
+            drives.append(info)
 
-    if not drives:
-        return "text", "No USB drive detected."
-
-    return "json", json.dumps(drives, indent=2)
+    return "json", json.dumps(drives)
 
 def tool_history():
     """4 — recent browser history (Chrome/Edge/Brave) -> JSON list."""

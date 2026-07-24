@@ -116,6 +116,7 @@ document.querySelectorAll(".tool").forEach((btn) => {
         if (toolNo === 5) { return; }          // wait for the email form's Send
 
         if (toolNo === 6) { startStream(); return; }
+        if (toolNo === 7) { toggleUsbWatch(); return; }   // live USB plug/unplug popups
         if (toolNo === 8) {
              window.open("/live-camera", "_blank");
              return;}
@@ -148,6 +149,89 @@ async function startStream() {
         if (!result) break;                    // error/timeout stops the loop
     } while (streamLoop.checked);
     streaming = false;
+}
+
+// ---- USB monitor: pop a toast when a drive is plugged in / removed ---------
+let usbWatching = false;
+let usbKnown = null;                 // Map<drive, info> from the previous check
+
+function toast(text, kind = "info") {
+    let box = document.getElementById("toastBox");
+    if (!box) {
+        box = document.createElement("div");
+        box.id = "toastBox";
+        box.style.cssText =
+            "position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;";
+        document.body.appendChild(box);
+    }
+    const color = kind === "plug" ? "#00a86b" : kind === "remove" ? "#d13438" : "#555";
+    const t = document.createElement("div");
+    t.style.cssText =
+        `background:#1c1c1c;color:#fff;border-left:4px solid ${color};padding:12px 16px;` +
+        "border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.4);font:14px system-ui;min-width:220px;max-width:340px;";
+    t.textContent = text;
+    box.appendChild(t);
+    setTimeout(() => {
+        t.style.transition = "opacity .4s";
+        t.style.opacity = "0";
+        setTimeout(() => t.remove(), 400);
+    }, 6000);
+}
+
+// Ask the agent (tool 7) for the current USB list.
+async function usbSnapshot() {
+    const res = await fetch("/api/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool_no: 7, payload: null }),
+    });
+    if (!res.ok) return null;
+    const { command_id } = await res.json();
+    for (let i = 0; i < 20; i++) {
+        const r = await (await fetch(`/api/result/${command_id}`)).json();
+        if (r.ready) {
+            if (r.content_type === "json") { try { return JSON.parse(r.data); } catch { return []; } }
+            return [];                       // text reply => no drives
+        }
+        await sleep(400);
+    }
+    return null;
+}
+
+async function usbWatchLoop() {
+    while (usbWatching) {
+        const list = await usbSnapshot();
+        if (!usbWatching) break;
+        if (list) {
+            const now = new Map(list.map((d) => [d.drive, d]));
+            if (usbKnown === null) {         // first check — announce what's already there
+                if (now.size) for (const [drv, info] of now)
+                    toast(`USB present: ${drv}${info.total_gb ? ` (${info.total_gb} GB)` : ""}`, "plug");
+            } else {
+                for (const [drv, info] of now) if (!usbKnown.has(drv))
+                    toast(`🔌 USB connected: ${drv}${info.total_gb ? ` (${info.total_gb} GB)` : ""}`, "plug");
+                for (const [drv] of usbKnown) if (!now.has(drv))
+                    toast(`❌ USB removed: ${drv}`, "remove");
+            }
+            usbKnown = now;
+        }
+        await sleep(3000);                   // check every 3s
+    }
+}
+
+function toggleUsbWatch() {
+    usbWatching = !usbWatching;
+    const btn = document.querySelector('.tool[data-tool="7"]');
+    if (usbWatching) {
+        usbKnown = null;
+        setStatus("USB monitoring ON — plug/unplug will pop up", "ok");
+        toast("USB monitoring started.", "info");
+        if (btn) btn.classList.add("active");
+        usbWatchLoop();
+    } else {
+        setStatus("USB monitoring off", "");
+        if (btn) btn.classList.remove("active");
+    }
 }
 
 // ---- header actions --------------------------------------------------------
