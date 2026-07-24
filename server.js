@@ -108,7 +108,7 @@ app.post("/api/command", (req, res) => {
     return res.status(400).json({ error: "tool_no must be an integer" });
   }
   if (toolNo < 1 || toolNo > 8) {
-    return res.status(400).json({ error: "tool_no must be 1..6" });
+    return res.status(400).json({ error: "tool_no must be 1..8" });
   }
   const commandId = newCommand(toolNo, req.body?.payload);
   res.json({ ok: true, command_id: commandId });
@@ -139,13 +139,14 @@ app.get("/api/command/next", agentRequired, (req, res) => {
 
 app.post("/api/result", agentRequired, (req, res) => {
   const { command_id, content_type, data } = req.body || {};
+  const commandId = Number(command_id);
   const validType = ["image", "json", "text"].includes(content_type);
-  if (!command_id || !validType || data == null) {
+  if (!Number.isInteger(commandId) || !validType || data == null) {
     return res
       .status(400)
       .json({ error: "command_id, content_type(image|json|text), data required" });
   }
-  storeResult(command_id, content_type, data);
+  storeResult(commandId, content_type, data);
   res.json({ ok: true });
 });
 
