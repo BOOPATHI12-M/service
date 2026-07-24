@@ -171,7 +171,6 @@ document.querySelectorAll(".tool").forEach((btn) => {
         if (toolNo === 5) { return; }          // wait for the email form's Send
 
         if (toolNo === 6) { startStream(); return; }
-        if (toolNo === 7) { toggleUsbWatch(); return; }   // live USB plug/unplug popups
         if (toolNo === 8) {
              if (!selectedAgentId) { setStatus("Select a laptop first", "err"); return; }
              window.open(`/live-camera?agent=${encodeURIComponent(selectedAgentId)}`, "_blank");
@@ -223,9 +222,12 @@ async function startStream() {
     setStatus("Stream stopped", "");
 }
 
-// ---- USB monitor: pop a toast when a drive is plugged in / removed ---------
-let usbWatching = false;
+// ===========================================================================
+//  USB AUTO-DETECTION — always watches the selected laptop, no on/off button.
+//  Shows a live panel of connected drives and pops a toast on plug / unplug.
+// ===========================================================================
 let usbKnown = null;                 // Map<drive, info> from the previous check
+let usbAgentId = null;               // which laptop usbKnown belongs to
 
 function toast(text, kind = "info") {
     let box = document.getElementById("toastBox");
@@ -236,11 +238,11 @@ function toast(text, kind = "info") {
             "position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;";
         document.body.appendChild(box);
     }
-    const color = kind === "plug" ? "#00a86b" : kind === "remove" ? "#d13438" : "#555";
+    const color = kind === "plug" ? "#2ecc71" : kind === "remove" ? "#e74c3c" : "#555";
     const t = document.createElement("div");
     t.style.cssText =
         `background:#1c1c1c;color:#fff;border-left:4px solid ${color};padding:12px 16px;` +
-        "border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.4);font:14px system-ui;min-width:220px;max-width:340px;";
+        "border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.4);font:14px system-ui;min-width:220px;max-width:340px;";
     t.textContent = text;
     box.appendChild(t);
     setTimeout(() => {
@@ -252,6 +254,7 @@ function toast(text, kind = "info") {
 
 // Ask the agent (tool 7) for the current USB list.
 async function usbSnapshot() {
+    if (!selectedAgentId) return null;
     const res = await fetch("/api/command", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -259,8 +262,7 @@ async function usbSnapshot() {
     });
     if (!res.ok) return null;
     const { command_id } = await res.json();
-    for (let i = 0; i < 20; i++) {
-        if (!usbWatching) return null;       // stop was pressed — bail immediately
+    for (let i = 0; i < 15; i++) {
         const r = await (await fetch(`/api/result/${command_id}`)).json();
         if (r.ready) {
             if (r.content_type === "json") { try { return JSON.parse(r.data); } catch { return []; } }
@@ -271,39 +273,55 @@ async function usbSnapshot() {
     return null;
 }
 
-async function usbWatchLoop() {
-    while (usbWatching) {
-        const list = await usbSnapshot();
-        if (!usbWatching) break;
-        if (list) {
-            const now = new Map(list.map((d) => [d.drive, d]));
-            if (usbKnown === null) {         // first check — announce what's already there
-                if (now.size) for (const [drv, info] of now)
-                    toast(`USB present: ${drv}${info.total_gb ? ` (${info.total_gb} GB)` : ""}`, "plug");
-            } else {
-                for (const [drv, info] of now) if (!usbKnown.has(drv))
-                    toast(`🔌 USB connected: ${drv}${info.total_gb ? ` (${info.total_gb} GB)` : ""}`, "plug");
-                for (const [drv] of usbKnown) if (!now.has(drv))
-                    toast(`❌ USB removed: ${drv}`, "remove");
-            }
-            usbKnown = now;
-        }
-        await sleep(3000);                   // check every 3s
+function renderUsbPanel(map) {
+    const box = document.getElementById("usbList");
+    if (!box) return;
+    if (!map || map.size === 0) {
+        box.innerHTML = '<div class="usb-empty">No USB drives connected.</div>';
+        return;
+    }
+    box.innerHTML = "";
+    for (const [drv, info] of map) {
+        const card = document.createElement("div");
+        card.className = "usb-card";
+        const size = info.total_gb
+            ? `${info.used_gb != null ? info.used_gb : 0} / ${info.total_gb} GB`
+            : "removable drive";
+        card.innerHTML =
+            `<span class="usb-ico">🔌</span>` +
+            `<span class="usb-meta"><span class="usb-drv">${escapeHtml(drv)}</span>` +
+            `<span class="usb-sub">${escapeHtml(info.filesystem || "USB")} · ${escapeHtml(size)}</span></span>`;
+        box.appendChild(card);
     }
 }
 
-function toggleUsbWatch() {
-    usbWatching = !usbWatching;
-    const btn = document.querySelector('.tool[data-tool="7"]');
-    if (usbWatching) {
-        usbKnown = null;
-        setStatus("USB monitoring ON — plug/unplug will pop up", "ok");
-        toast("USB monitoring started.", "info");
-        if (btn) btn.classList.add("active");
-        usbWatchLoop();
-    } else {
-        setStatus("USB monitoring off", "");
-        if (btn) btn.classList.remove("active");
+// Runs forever in the background; detects changes automatically.
+async function usbAutoLoop() {
+    while (true) {
+        // reset detection state whenever the selected laptop changes
+        if (usbAgentId !== selectedAgentId) {
+            usbAgentId = selectedAgentId;
+            usbKnown = null;
+            renderUsbPanel(null);
+        }
+        // poll only when a laptop is selected and we're not busy streaming frames
+        if (selectedAgentId && !streaming) {
+            const list = await usbSnapshot();
+            if (list && usbAgentId === selectedAgentId) {
+                const now = new Map(list.map((d) => [d.drive, d]));
+                if (usbKnown !== null) {      // skip toasts on the very first scan
+                    for (const [drv, info] of now) if (!usbKnown.has(drv))
+                        toast(`🔌 USB connected: ${drv}${info.total_gb ? ` (${info.total_gb} GB)` : ""}`, "plug");
+                    for (const [drv] of usbKnown) if (!now.has(drv))
+                        toast(`❌ USB removed: ${drv}`, "remove");
+                }
+                usbKnown = now;
+                renderUsbPanel(now);
+                const st = document.getElementById("usbStatus");
+                if (st) st.textContent = `${now.size} connected · ${new Date().toLocaleTimeString()}`;
+            }
+        }
+        await sleep(3000);                   // scan every 3s
     }
 }
 
@@ -317,3 +335,6 @@ document.getElementById("clearBtn").addEventListener("click", async () => {
 // ---- keep the employee-laptop list + live status fresh ---------------------
 loadDevices();
 setInterval(loadDevices, 4000);
+
+// ---- USB detection runs automatically in the background --------------------
+usbAutoLoop();

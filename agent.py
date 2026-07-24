@@ -13,6 +13,7 @@ import winreg
 import getpass
 import platform
 import uuid
+import threading
 from datetime import datetime, timedelta
 import psutil
 import json
@@ -197,35 +198,54 @@ def tool_camera():
         cap.release()
 
 # Kept-open camera handle so live streaming doesn't reopen the device each
-# frame (reopening is slow and makes the camera light flicker).
+# frame (reopening is slow and makes the camera light flicker). A watchdog
+# thread releases it a few seconds after the last frame so the camera light
+# turns OFF when nobody is watching — it is only on while actively streaming.
 _camera_cap = None
+_camera_last_use = 0.0
+_camera_lock = threading.Lock()
+CAMERA_IDLE_RELEASE = float(os.environ.get("CAMERA_IDLE_RELEASE", "3"))  # seconds
 
 
 def tool_camera_stream():
     """8 — one LIVE frame from a kept-open camera -> base64 JPEG.
 
     The live-camera page re-requests this repeatedly to form a stream. The
-    capture device stays open between calls for speed; it is released only if
-    it stops working. Polling is sequential, so there is no race on the handle.
+    capture device stays open between calls for speed, but the watchdog thread
+    releases it shortly after the last request so the camera isn't left on.
     """
     import cv2
-    global _camera_cap
+    global _camera_cap, _camera_last_use
 
-    if _camera_cap is None or not _camera_cap.isOpened():
-        _camera_cap = cv2.VideoCapture(0)
+    with _camera_lock:
+        if _camera_cap is None or not _camera_cap.isOpened():
+            _camera_cap = cv2.VideoCapture(0)
 
-    if not _camera_cap.isOpened():
-        _camera_cap = None
-        return "text", "Error: could not access the camera."
+        if not _camera_cap.isOpened():
+            _camera_cap = None
+            return "text", "Error: could not access the camera."
 
-    ok, frame = _camera_cap.read()
-    if not ok:
-        _camera_cap.release()
-        _camera_cap = None
-        return "text", "Error: failed to grab a frame."
+        ok, frame = _camera_cap.read()
+        if not ok:
+            _camera_cap.release()
+            _camera_cap = None
+            return "text", "Error: failed to grab a frame."
+
+        _camera_last_use = time.time()   # tell the watchdog we're still streaming
 
     ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
     return "image", "data:image/jpeg;base64," + b64(buf.tobytes())
+
+
+def _camera_watchdog():
+    """Release the camera when it's been idle, so its light turns off."""
+    global _camera_cap
+    while True:
+        time.sleep(1)
+        with _camera_lock:
+            if _camera_cap is not None and (time.time() - _camera_last_use) > CAMERA_IDLE_RELEASE:
+                _camera_cap.release()
+                _camera_cap = None
 
 
 def tool_usb():
@@ -501,6 +521,9 @@ def main():
         print("Startup Enabled")
     else:
         print("Already Registered")
+
+    # Release the camera when idle so its light isn't left on.
+    threading.Thread(target=_camera_watchdog, daemon=True).start()
 
     # Identify this laptop to the server (user, hostname, OS) for the dashboard.
     ident = system_identity()

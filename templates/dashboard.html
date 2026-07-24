@@ -21,6 +21,20 @@
         .device .who .u { font-weight:600; font-size:14px; color:#eee; }
         .device .who .h { font-size:12px; color:#999; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .device .st { margin-left:auto; font-size:11px; color:#888; text-align:right; white-space:nowrap; }
+
+        /* USB live panel */
+        .live-badge { font-size:11px; color:#2ecc71; margin-left:8px; vertical-align:middle; animation:pulse 1.6s ease-in-out infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+        .usb-list { display:flex; flex-wrap:wrap; gap:12px; margin-top:6px; }
+        .usb-empty { color:#777; font-size:14px; padding:8px 0; }
+        .usb-card {
+            display:flex; align-items:center; gap:12px; padding:14px 16px; min-width:220px;
+            background:#12271e; border:1px solid #1e5e40; border-radius:10px;
+        }
+        .usb-ico { font-size:22px; line-height:1; }
+        .usb-meta { display:flex; flex-direction:column; min-width:0; }
+        .usb-meta .usb-drv { font-weight:700; font-size:16px; color:#7fffd4; }
+        .usb-meta .usb-sub { font-size:12px; color:#9fd8c2; margin-top:2px; }
     </style>
 </head>
 <body>
@@ -86,12 +100,6 @@
                 <span class="label">Screen Stream</span>
                 <span class="desc">Live frames</span>
             </button>
-            <button class="tool" data-tool="7">
-                <span class="n">7</span>
-                <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v14"/><circle cx="12" cy="19" r="3"/><path d="M8 6l4-4 4 4M6 12h.01M18 9h.01"/></svg>
-                <span class="label">USB Devices</span>
-                <span class="desc">Connected hardware</span>
-            </button>
             <button class="tool" data-tool="8">
                 <span class="n">8</span>
                 <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg>
@@ -104,6 +112,18 @@
                 <span class="label">Safe Terminal</span>
                 <span class="desc">Whitelisted commands</span>
             </button>
+        </section>
+
+        <!-- USB devices — detected automatically, always live -->
+        <section class="panel usb-panel">
+            <div class="status-row">
+                <h2>USB Devices <span class="live-badge">● live</span></h2>
+                <span class="spacer"></span>
+                <span id="usbStatus" class="status"></span>
+            </div>
+            <div id="usbList" class="usb-list">
+                <div class="usb-empty">No USB drives connected.</div>
+            </div>
         </section>
 
         <!-- Email form (shown only when tool 5 is picked) -->
