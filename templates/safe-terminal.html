@@ -56,6 +56,7 @@ function line(text, cls) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const agentId = new URLSearchParams(location.search).get("agent");  // which laptop
 
 // Post a tool-9 command, then poll for its result (same API the dashboard uses).
 async function runCommand(cmd) {
@@ -63,7 +64,7 @@ async function runCommand(cmd) {
     const res = await fetch("/api/command", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool_no: 9, payload: { command: cmd } }),
+        body: JSON.stringify({ tool_no: 9, payload: { command: cmd }, agent_id: agentId }),
     });
     if (!res.ok) { line("Failed to queue command.", "err"); statusEl.textContent = "Error"; return; }
     const { command_id } = await res.json();

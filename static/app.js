@@ -13,6 +13,59 @@ const TOOL_NAMES = {
 };
 
 let streaming = false;   // guard so tool 6 doesn't stack loops
+let selectedAgentId = null;   // which employee laptop the tools act on
+
+// ---- employee laptops: list, live status, and selection --------------------
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+async function loadDevices() {
+    let data;
+    try { data = await (await fetch("/api/agents")).json(); }
+    catch { return; }
+    const list = data.agents || [];
+    const box = document.getElementById("devices");
+
+    if (!list.length) {
+        box.innerHTML = '<div class="devices-empty">No laptops have connected yet. Start the agent on an employee machine.</div>';
+        selectedAgentId = null;
+        document.getElementById("selectedName").textContent = "— (no laptop selected)";
+        return;
+    }
+
+    // Auto-select the first online laptop if nothing is chosen yet.
+    if (!selectedAgentId || !list.some((a) => a.id === selectedAgentId)) {
+        const first = list.find((a) => a.online) || list[0];
+        selectAgent(first);
+    }
+
+    box.innerHTML = "";
+    for (const a of list) {
+        const card = document.createElement("div");
+        card.className = "device" + (a.id === selectedAgentId ? " selected" : "");
+        card.dataset.id = a.id;
+        const status = a.online ? "online" : `offline · ${a.last_seen_secs}s ago`;
+        card.innerHTML =
+            `<span class="sdot ${a.online ? "online" : ""}"></span>` +
+            `<span class="who"><span class="u">${escapeHtml(a.username || "unknown")}</span>` +
+            `<span class="h">${escapeHtml(a.hostname || a.id)}</span></span>` +
+            `<span class="st">${status}<br>${escapeHtml(a.os || "")}</span>`;
+        card.addEventListener("click", () => {
+            selectAgent(a);
+            document.querySelectorAll(".device").forEach((el) =>
+                el.classList.toggle("selected", el.dataset.id === a.id));
+        });
+        box.appendChild(card);
+    }
+}
+
+function selectAgent(a) {
+    selectedAgentId = a.id;
+    const label = `${a.username || "unknown"} @ ${a.hostname || a.id}`;
+    document.getElementById("selectedName").textContent = label + (a.online ? "" : " (offline)");
+}
 
 function setStatus(text, cls = "") {
     statusEl.textContent = text;
@@ -25,13 +78,14 @@ function setButtonsDisabled(disabled) {
 
 // ---- create a command, then poll until the agent answers -------------------
 async function runTool(toolNo, payload = null) {
+    if (!selectedAgentId) { setStatus("Select a laptop first", "err"); return null; }
     setButtonsDisabled(true);
     setStatus(`Running ${TOOL_NAMES[toolNo]}…`, "busy");
 
     const res = await fetch("/api/command", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool_no: toolNo, payload }),
+        body: JSON.stringify({ tool_no: toolNo, payload, agent_id: selectedAgentId }),
     });
     if (!res.ok) {
         setStatus("Failed to queue command", "err");
@@ -119,10 +173,12 @@ document.querySelectorAll(".tool").forEach((btn) => {
         if (toolNo === 6) { startStream(); return; }
         if (toolNo === 7) { toggleUsbWatch(); return; }   // live USB plug/unplug popups
         if (toolNo === 8) {
-             window.open("/live-camera", "_blank");
+             if (!selectedAgentId) { setStatus("Select a laptop first", "err"); return; }
+             window.open(`/live-camera?agent=${encodeURIComponent(selectedAgentId)}`, "_blank");
              return;}
         if (toolNo === 9) {                    // open the Safe Terminal in a new tab
-             window.open("/terminal", "_blank");
+             if (!selectedAgentId) { setStatus("Select a laptop first", "err"); return; }
+             window.open(`/terminal?agent=${encodeURIComponent(selectedAgentId)}`, "_blank");
              return;}
         await runTool(toolNo);
     });
@@ -153,7 +209,7 @@ async function startStream() {
             const res = await fetch("/api/command", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ tool_no: 6, payload: null }),
+                body: JSON.stringify({ tool_no: 6, payload: null, agent_id: selectedAgentId }),
             });
             if (!res.ok) break;
             commandId = (await res.json()).command_id;
@@ -199,7 +255,7 @@ async function usbSnapshot() {
     const res = await fetch("/api/command", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool_no: 7, payload: null }),
+        body: JSON.stringify({ tool_no: 7, payload: null, agent_id: selectedAgentId }),
     });
     if (!res.ok) return null;
     const { command_id } = await res.json();
@@ -257,3 +313,7 @@ document.getElementById("clearBtn").addEventListener("click", async () => {
     const data = await res.json();
     setStatus(`Cleared ${data.removed} queued command(s)`, "ok");
 });
+
+// ---- keep the employee-laptop list + live status fresh ---------------------
+loadDevices();
+setInterval(loadDevices, 4000);

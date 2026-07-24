@@ -57,13 +57,14 @@ let frames = 0;
 let startedAt = 0;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const agentId = new URLSearchParams(location.search).get("agent");  // which laptop
 
 // Request one camera frame (tool 8) and wait for the agent's result.
 async function grabFrame() {
     const res = await fetch("/api/command", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tool_no: 8, payload: null }),
+        body: JSON.stringify({ tool_no: 8, payload: null, agent_id: agentId }),
     });
     if (!res.ok) return null;
     const { command_id } = await res.json();

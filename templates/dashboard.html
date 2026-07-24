@@ -5,6 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard · Laptop Control</title>
     <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .devices { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:8px; }
+        .devices-empty { color:#888; font-size:14px; padding:10px 0; }
+        .device {
+            display:flex; align-items:center; gap:10px; padding:12px 14px; min-width:220px;
+            background:#161616; border:1px solid #2a2a2a; border-radius:10px; cursor:pointer;
+            transition:border-color .15s, background .15s;
+        }
+        .device:hover { border-color:#3a3a3a; }
+        .device.selected { border-color:#00a86b; background:#12271e; }
+        .device .sdot { width:10px; height:10px; border-radius:50%; background:#666; flex:none; }
+        .device .sdot.online { background:#2ecc71; box-shadow:0 0 8px #2ecc71; }
+        .device .who { display:flex; flex-direction:column; min-width:0; }
+        .device .who .u { font-weight:600; font-size:14px; color:#eee; }
+        .device .who .h { font-size:12px; color:#999; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .device .st { margin-left:auto; font-size:11px; color:#888; text-align:right; white-space:nowrap; }
+    </style>
 </head>
 <body>
     <header class="topbar">
@@ -19,8 +36,17 @@
 
     <main class="wrap">
         <div class="page-head">
+            <h1>Employee Laptops</h1>
+            <p class="lede">Live status of installed agents. Pick a laptop, then run a tool on it.</p>
+        </div>
+
+        <section id="devices" class="devices">
+            <div class="devices-empty">No laptops have connected yet. Start the agent on an employee machine.</div>
+        </section>
+
+        <div class="page-head" style="margin-top:8px">
             <h1>Tools</h1>
-            <p class="lede">Pick a tool to run it on the connected laptop.</p>
+            <p class="lede">Running on: <strong id="selectedName">— (no laptop selected)</strong></p>
         </div>
 
         <section class="tools">
