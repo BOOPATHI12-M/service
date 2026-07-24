@@ -16,7 +16,7 @@
 const path = require("path");
 const crypto = require("crypto");
 const express = require("express");
-
+const axios = require("axios");
 // ---- Config (env-overridable, mirrors config.py) --------------------------
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = parseInt(process.env.PORT || "8000", 10);
@@ -107,13 +107,15 @@ app.post("/api/command", (req, res) => {
   if (!Number.isInteger(toolNo)) {
     return res.status(400).json({ error: "tool_no must be an integer" });
   }
-  if (toolNo < 1 || toolNo > 7) {
+  if (toolNo < 1 || toolNo > 8) {
     return res.status(400).json({ error: "tool_no must be 1..6" });
   }
   const commandId = newCommand(toolNo, req.body?.payload);
   res.json({ ok: true, command_id: commandId });
 });
-
+app.get("/webrtc", (req, res) => {
+    res.sendFile(path.join(__dirname, "templates", "webrtc.html"));
+});
 app.get("/api/result/:id", (req, res) => {
   const result = popResult(Number(req.params.id)); // returns + auto-removes when ready
   if (result === null) return res.json({ ready: false });
@@ -145,6 +147,28 @@ app.post("/api/result", agentRequired, (req, res) => {
   }
   storeResult(command_id, content_type, data);
   res.json({ ok: true });
+});
+
+const PYTHON_API =
+    process.env.PYTHON_API ||"http://127.0.0.1:8001/api/run";
+app.post("/execute", async (req, res) => {
+
+    try {
+
+        const response = await axios.post(PYTHON_API, {
+            command: req.body.command
+        });
+
+        res.json(response.data);
+
+    } catch (err) {
+
+        res.status(500).json({
+            error: err.message
+        });
+
+    }
+
 });
 
 // ===========================================================================

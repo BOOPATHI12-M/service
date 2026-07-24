@@ -8,20 +8,70 @@
 </head>
 <body>
     <header class="topbar">
-        <span class="brand">Laptop Control</span>
+        <span class="brand">
+            <span class="brand-dot"></span>
+            Laptop Control
+        </span>
         <span class="spacer"></span>
+        <span class="conn"><span class="conn-dot"></span> Agent</span>
         <button id="clearBtn" class="ghost">Clear queue</button>
     </header>
 
     <main class="wrap">
+        <div class="page-head">
+            <h1>Tools</h1>
+            <p class="lede">Pick a tool to run it on the connected laptop.</p>
+        </div>
+
         <section class="tools">
-            <button class="tool" data-tool="1"><span class="n">1</span>Screenshot</button>
-            <button class="tool" data-tool="2"><span class="n">2</span>CPU Info</button>
-            <button class="tool" data-tool="3"><span class="n">3</span>Camera</button>
-            <button class="tool" data-tool="4"><span class="n">4</span>Browser History</button>
-            <button class="tool" data-tool="5"><span class="n">5</span>Send Email</button>
-            <button class="tool" data-tool="6"><span class="n">6</span>Screen Stream</button>
-            <button class="tool" data-tool="7"><span class="n">7</span>USB Devices</button>
+            <button class="tool" data-tool="1">
+                <span class="n">1</span>
+                <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                <span class="label">Screenshot</span>
+                <span class="desc">Capture the screen</span>
+            </button>
+            <button class="tool" data-tool="2">
+                <span class="n">2</span>
+                <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
+                <span class="label">CPU Info</span>
+                <span class="desc">System stats</span>
+            </button>
+            <button class="tool" data-tool="3">
+                <span class="n">3</span>
+                <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                <span class="label">Camera</span>
+                <span class="desc">Snap a photo</span>
+            </button>
+            <button class="tool" data-tool="4">
+                <span class="n">4</span>
+                <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                <span class="label">Browser History</span>
+                <span class="desc">Recent sites</span>
+            </button>
+            <button class="tool" data-tool="5">
+                <span class="n">5</span>
+                <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 7l10 6 10-6"/></svg>
+                <span class="label">Send Email</span>
+                <span class="desc">Compose &amp; send</span>
+            </button>
+            <button class="tool" data-tool="6">
+                <span class="n">6</span>
+                <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="12" cy="10" r="3"/></svg>
+                <span class="label">Screen Stream</span>
+                <span class="desc">Live frames</span>
+            </button>
+            <button class="tool" data-tool="7">
+                <span class="n">7</span>
+                <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v14"/><circle cx="12" cy="19" r="3"/><path d="M8 6l4-4 4 4M6 12h.01M18 9h.01"/></svg>
+                <span class="label">USB Devices</span>
+                <span class="desc">Connected hardware</span>
+            </button>
+            <button class="tool" data-tool="8">
+                <span class="n">8</span>
+                <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg>
+                <span class="label">Live Camera</span>
+                <span class="desc">WebRTC stream</span>
+            </button>
         </section>
 
         <!-- Email form (shown only when tool 5 is picked) -->
@@ -36,7 +86,7 @@
             </div>
         </section>
 
-        <section class="panel">
+        <section class="panel result-panel">
             <div class="status-row">
                 <h2>Result</h2>
                 <span id="status" class="status"></span>
@@ -45,7 +95,12 @@
                     <input type="checkbox" id="streamLoop"> keep streaming
                 </label>
             </div>
-            <div id="result" class="result">Pick a tool above to run it on the laptop.</div>
+            <div id="result" class="result">
+                <div class="result-empty">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    <p>Pick a tool above to run it on the laptop.</p>
+                </div>
+            </div>
         </section>
     </main>
 

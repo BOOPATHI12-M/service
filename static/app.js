@@ -8,7 +8,7 @@ const streamLoop = document.getElementById("streamLoop");
 
 const TOOL_NAMES = {
     1: "Screenshot", 2: "CPU Info", 3: "Camera",
-    4: "Browser History", 5: "Send Email", 6: "Screen Stream",7: "USB Devices",
+    4: "Browser History", 5: "Send Email", 6: "Screen Stream",7: "USB Devices",8: "Live Camera",
 };
 
 let streaming = false;   // guard so tool 6 doesn't stack loops
@@ -115,7 +115,9 @@ document.querySelectorAll(".tool").forEach((btn) => {
         if (toolNo === 5) { return; }          // wait for the email form's Send
 
         if (toolNo === 6) { startStream(); return; }
-
+        if (toolNo === 8) {
+             window.open("/webrtc", "_blank");
+             return;}
         await runTool(toolNo);
     });
 });

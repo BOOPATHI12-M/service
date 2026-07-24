@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Live Camera</title>
+
+<style>
+body{
+    margin:0;
+    background:#111;
+    color:white;
+    font-family:Arial;
+    text-align:center;
+}
+
+h1{
+    padding:15px;
+}
+
+video{
+    width:90%;
+    max-width:1200px;
+    border-radius:10px;
+    border:2px solid white;
+}
+
+button{
+    margin-top:20px;
+    padding:10px 25px;
+    font-size:18px;
+}
+</style>
+
+</head>
+
+<body>
+
+<h1>WebRTC Live Camera</h1>
+
+<button id="start">Start Camera</button>
+
+<br><br>
+
+<video
+    id="video"
+    autoplay
+    playsinline
+    controls
+></video>
+
+<script>
+    const video = document.getElementById("video");
+
+document.getElementById("start").onclick = async () => {
+
+    const pc = new RTCPeerConnection();
+
+    pc.ontrack = (event)=>{
+        video.srcObject = event.streams[0];
+    };
+
+    const offer = await pc.createOffer({
+        offerToReceiveVideo:true
+    });
+
+    await pc.setLocalDescription(offer);
+
+    const response = await fetch("http://localhost:8081/offer",{
+        method:"POST",
+        headers:{
+            "Content-Type":"application/json"
+        },
+        body:JSON.stringify({
+            sdp:pc.localDescription.sdp,
+            type:pc.localDescription.type
+        })
+    });
+
+    const answer = await response.json();
+
+    await pc.setRemoteDescription(answer);
+};
+</script>
+
+</body>
+</html>
