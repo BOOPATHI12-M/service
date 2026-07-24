@@ -107,8 +107,8 @@ app.post("/api/command", (req, res) => {
   if (!Number.isInteger(toolNo)) {
     return res.status(400).json({ error: "tool_no must be an integer" });
   }
-  if (toolNo < 1 || toolNo > 8) {
-    return res.status(400).json({ error: "tool_no must be 1..8" });
+  if (toolNo < 1 || toolNo > 9) {
+    return res.status(400).json({ error: "tool_no must be 1..9" });
   }
   const commandId = newCommand(toolNo, req.body?.payload);
   res.json({ ok: true, command_id: commandId });

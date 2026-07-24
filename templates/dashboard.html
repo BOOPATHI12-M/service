@@ -72,6 +72,22 @@
                 <span class="label">Live Camera</span>
                 <span class="desc">WebRTC stream</span>
             </button>
+            <button class="tool" data-tool="9">
+                <span class="n">9</span>
+                <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 9l3 3-3 3M12 15h6"/></svg>
+                <span class="label">Safe Terminal</span>
+                <span class="desc">Whitelisted commands</span>
+            </button>
+        </section>
+
+        <!-- Terminal input (shown only when tool 9 is picked) -->
+        <section id="terminalForm" class="panel" hidden>
+            <h2>Safe Terminal</h2>
+            <p class="lede">Only whitelisted commands run (dir, ipconfig, tasklist, whoami…). Press Enter to run.</p>
+            <div class="row">
+                <input id="termCmd" type="text" placeholder="e.g. dir  /  ipconfig  /  tasklist" autocomplete="off" style="flex:1">
+                <button id="termRun">Run</button>
+            </div>
         </section>
 
         <!-- Email form (shown only when tool 5 is picked) -->

