@@ -1,0 +1,9 @@
+requests>=2.31
+pyautogui>=0.9.54
+psutil>=5.9
+opencv-python>=4.8
+numpy>=1.24
+mss>=9.0
+aiortc>=1.9          # WebRTC live video (tool 10)
+av>=12               # PyAV — video/audio frames for aiortc
+sounddevice>=0.4     # mic capture + speaker playback (consented audio)
