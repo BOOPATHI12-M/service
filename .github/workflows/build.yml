@@ -1,9 +1,9 @@
-name: Build Windows EXE
+name: Build Windows Release EXE
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types:
+      - published
 
 permissions:
   contents: write
@@ -13,25 +13,37 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout release tag
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
-      - name: Set up Python
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Install build dependencies
+        shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller
           if (Test-Path requirements.txt) { pip install -r requirements.txt }
 
-      - name: Build EXE
+      - name: Build application
+        shell: pwsh
         run: |
-          pyinstaller --onefile --noconsole --name cal agent.py
+          pyinstaller agent.spec
 
-      - name: Upload EXE to Release
+      - name: Verify executable was created
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist/agent.exe")) {
+            throw "dist/agent.exe was not created by PyInstaller."
+          }
+
+      - name: Upload executable to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/cal.exe
+          tag_name: ${{ github.event.release.tag_name }}
+          files: dist/agent.exe
