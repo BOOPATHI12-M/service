@@ -1,13 +1,21 @@
-# Render Blueprint — deploys this folder as one always-on Node web service.
+# Render Blueprint — deploys this folder as one Node web service.
 # Render auto-detects this file when you create a "Blueprint" from the repo.
+#
+# The build is pinned to Dockerfile (the same image Railway builds) so both
+# platforms run byte-identical code. Auto-detection is not used because this
+# repo also holds the Windows Python agent (agent.py, requirements.txt) and
+# would otherwise be treated as a Python app.
 services:
   - type: web
     name: laptop-control
-    runtime: node
-    plan: free                 # free instance (spins down when idle; see notes)
-    buildCommand: npm install
-    startCommand: node server.js
-    healthCheckPath: /
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free                 # spins down when idle; see DEPLOY.md
+    region: singapore
+    healthCheckPath: /healthz
     envVars:
       - key: AGENT_KEY
         generateValue: true    # Render generates a random secret; copy it into agent.py
+      - key: ONLINE_MS
+        value: "15000"
