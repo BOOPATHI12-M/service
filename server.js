@@ -28,7 +28,7 @@ const IS_PROD = process.env.NODE_ENV === "production";
 // otherwise anyone could register a laptop or read command results.
 if (IS_PROD && AGENT_KEY === DEFAULT_AGENT_KEY) {
   console.error(
-    "FATAL: AGENT_KEY is unset in production. Set it in the Render/Railway " +
+    "FATAL: AGENT_KEY is unset in production. Set it in the Render " +
       "environment (see DEPLOY.md) so it matches AGENT_KEY in agent.py."
   );
   process.exit(1);
@@ -36,7 +36,7 @@ if (IS_PROD && AGENT_KEY === DEFAULT_AGENT_KEY) {
 
 const app = express();
 app.disable("x-powered-by");
-// Render and Railway terminate TLS at a proxy in front of this process; trust
+// Render terminates TLS at a proxy in front of this process; trust
 // it so req.ip / req.protocol reflect the real client, not the proxy.
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "25mb" })); // base64 screenshots can be large
@@ -144,7 +144,7 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "templates", "dashboard.html"));
 });
 
-// Health check for Render/Railway. Cheap, no side effects, always same-origin.
+// Health check for Render. Cheap, no side effects, always same-origin.
 app.get("/healthz", (req, res) => {
   res.json({
     status: "ok",
@@ -231,7 +231,7 @@ app.post("/api/result", agentRequired, (req, res) => {
 });
 
 // Optional proxy to a local Python executor. There is no such service in the
-// Render/Railway deployment, so the route is only mounted when PYTHON_API is
+// Render deployment, so the route is only mounted when PYTHON_API is
 // explicitly configured — otherwise it would hang then 500 on every call.
 const PYTHON_API = process.env.PYTHON_API || "";
 if (PYTHON_API) {
@@ -274,13 +274,13 @@ if (require.main === module) {
     console.log(`Backend running on http://${HOST}:${PORT}  (no login)`);
   });
 
-  // Render and Railway send SIGTERM on redeploy/scale-down. Stop accepting new
+  // Render sends SIGTERM on redeploy/scale-down. Stop accepting new
   // connections and drain in-flight ones so a deploy doesn't cut requests off.
   const shutdown = (signal) => {
     console.log(`${signal} received — shutting down`);
     server.close(() => process.exit(0));
     // Backstop: if connections don't drain, exit anyway before the platform
-    // sends SIGKILL (~10s on both).
+    // sends SIGKILL (~10s).
     setTimeout(() => process.exit(0), 8000).unref();
   };
   process.on("SIGTERM", () => shutdown("SIGTERM"));

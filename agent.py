@@ -22,8 +22,11 @@ import requests
 # ===========================================================================
 #  API PATH  — set this to your backend (server.js) URL before building the exe.
 #  This is the ONLY thing you must change to point the agent at a hosted server.
-#     local:   http://localhost:8000
-#     hosted:  https://your-domain.example      (or  http://<server-ip>:8000)
+#     local:    http://localhost:8000
+#     hosted:   https://your-domain.example     (or  http://<server-ip>:8000)
+#     render:   https://<service>.onrender.com
+#  Replace the default below with the public domain Render assigns to the
+#  service (Render dashboard -> service -> Settings -> Custom Domains).
 # ===========================================================================
 API_BASE = os.environ.get("API_BASE", "https://laptop-control.onrender.com")
 APP_NAME = "monitor-agent"  # name of the agent in the Windows registry (for auto-start)
@@ -362,19 +365,69 @@ def tool_email(payload):
         return "text", f"Could not send email: {e}"
 
 
-def tool_screen():
-    """6 — one screen frame -> base64 JPEG (the browser re-requests to 'stream')."""
-    import cv2
-    import numpy as np
-    import mss
+import cv2
+import numpy as np
+import mss
+import threading
+import time
+import base64
+
+latest_frame = None
+frame_lock = threading.Lock()
+
+def b64(data):
+    return base64.b64encode(data).decode("utf-8")
+
+
+def screen_capture():
+    global latest_frame
 
     with mss.mss() as sct:
         monitor = sct.monitors[1]
-        img = np.array(sct.grab(monitor))
-        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 60])
-    return "image", "data:image/jpeg;base64," + b64(buf.tobytes())
 
+        while True:
+            img = np.array(sct.grab(monitor))
+
+            # BGRA -> BGR
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+
+            # Reduce resolution if low latency is more important
+            # img = cv2.resize(img, (1280, 720))
+
+            ok, buf = cv2.imencode(
+                ".jpg",
+                img,
+                [
+                    cv2.IMWRITE_JPEG_QUALITY,
+                    50
+                ]
+            )
+
+            if ok:
+                with frame_lock:
+                    latest_frame = buf.tobytes()
+
+            # Capture around 30 FPS
+            time.sleep(0.033)
+
+
+# Start capture once
+threading.Thread(
+    target=screen_capture,
+    daemon=True
+).start()
+
+
+def tool_screen():
+    """Return the most recently captured screen frame."""
+
+    with frame_lock:
+        frame = latest_frame
+
+    if frame is None:
+        return "image", ""
+
+    return "image", "data:image/jpeg;base64," + b64(frame)
 
 # ---------------------------------------------------------------------------
 #  Safe terminal (tool 9) — run ONE whitelisted command for monitoring.
