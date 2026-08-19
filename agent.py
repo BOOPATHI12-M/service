@@ -364,71 +364,83 @@ def tool_email(payload):
     except Exception as e:
         return "text", f"Could not send email: {e}"
 
-
-import cv2
-import numpy as np
 import mss
-import threading
+from aiortc import VideoStreamTrack
+from av import VideoFrame
+import numpy as np
+import asyncio
+import fractions
 import time
-import base64
-
-latest_frame = None
-frame_lock = threading.Lock()
-
-def b64(data):
-    return base64.b64encode(data).decode("utf-8")
 
 
-def screen_capture():
-    global latest_frame
+class ScreenTrack(VideoStreamTrack):
 
-    with mss.mss() as sct:
-        monitor = sct.monitors[1]
+    def __init__(self, monitor_number=1, fps=30):
+        super().__init__()
 
-        while True:
-            img = np.array(sct.grab(monitor))
+        self.fps = fps
+        self.sct = mss.MSS()
+        self.monitor = self.sct.monitors[monitor_number]
 
-            # BGRA -> BGR
-            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        self.frame_time = 1 / fps
+        self.last_frame_time = 0
 
-            # Reduce resolution if low latency is more important
-            # img = cv2.resize(img, (1280, 720))
+    async def recv(self):
 
-            ok, buf = cv2.imencode(
-                ".jpg",
-                img,
-                [
-                    cv2.IMWRITE_JPEG_QUALITY,
-                    50
-                ]
-            )
+        # Maintain FPS
+        now = time.time()
 
-            if ok:
-                with frame_lock:
-                    latest_frame = buf.tobytes()
+        wait = self.frame_time - (now - self.last_frame_time)
 
-            # Capture around 30 FPS
-            time.sleep(0.033)
+        if wait > 0:
+            await asyncio.sleep(wait)
+
+        self.last_frame_time = time.time()
+
+        # Capture screen
+        screenshot = self.sct.grab(self.monitor)
+
+        # Convert screenshot to NumPy
+        img = np.array(screenshot)
+
+        # BGRA -> RGB
+        img = img[:, :, :3]
+        img = img[:, :, ::-1]
+
+        # Create WebRTC frame
+        frame = VideoFrame.from_ndarray(
+            img,
+            format="rgb24"
+        )
+
+        # WebRTC timestamp
+        frame.pts = int(
+            time.time() * 90000
+        )
+
+        frame.time_base = fractions.Fraction(
+            1,
+            90000
+        )
+
+        return frame
 
 
-# Start capture once
-threading.Thread(
-    target=screen_capture,
-    daemon=True
-).start()
+# Create the screen stream once
+_screen_track = ScreenTrack(
+    monitor_number=1,
+    fps=30
+)
 
 
 def tool_screen():
-    """Return the most recently captured screen frame."""
+    """
+    Return the live WebRTC screen track.
 
-    with frame_lock:
-        frame = latest_frame
+    This does NOT create JPEG/base64 images.
+    """
 
-    if frame is None:
-        return "image", ""
-
-    return "image", "data:image/jpeg;base64," + b64(frame)
-
+    return _screen_track
 # ---------------------------------------------------------------------------
 #  Safe terminal (tool 9) — run ONE whitelisted command for monitoring.
 #  Only the commands below are permitted; anything else is refused. This keeps
