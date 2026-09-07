@@ -89,6 +89,9 @@
                     <span class="label">Safe Terminal</span>
                     <span class="desc">Whitelisted commands</span>
                 </button>
+                <button class="tool" data-tool="12">
+                    File Transfer
+                </button>
             </section>
 
             <!-- USB devices — detected automatically, always live -->
@@ -114,7 +117,53 @@
                     <button id="mailCancel" class="ghost">Cancel</button>
                 </div>
             </section>
-
+            <div id="fileTransferForm" hidden>
+                <h3>File Transfer</h3>
+                <!-- Exact file path -->
+                <div class="file-transfer-section">
+                    <label for="filePath">
+                        File Path
+                    </label>
+                    <input
+                        type="text"
+                        id="filePath"
+                        placeholder="C:\Users\User\Downloads\report.pdf"
+                        autocomplete="off"
+                    />
+                    <button
+                        type="button"
+                        id="transferFileBtn"
+                    >
+                        Transfer File
+                    </button>
+                </div>
+                <div class="file-transfer-divider">
+                    OR
+                </div>
+                <!-- Search by filename -->
+                <div class="file-transfer-section">
+                    <label for="fileSearchName">
+                        Search by Filename
+                    </label>
+                    <input
+                        type="text"
+                        id="fileSearchName"
+                        placeholder="report.pdf"
+                        autocomplete="off"
+                    />
+                    <button
+                        type="button"
+                        id="searchFileBtn"
+                    >
+                        Search File
+                    </button>
+                </div>
+                <!-- Search results -->
+                <div
+                    id="fileSearchResults"
+                    class="file-search-results"
+               ></div>
+            </div>
             <!-- Result -->
             <section class="panel result-panel">
                 <div class="status-row">

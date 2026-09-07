@@ -27,6 +27,76 @@ body {
     background-attachment: fixed;
     line-height: 1.5;
 }
+#fileTransferForm {
+    margin-top: 20px;
+    padding: 20px;
+    border-radius: 10px;
+}
+
+.file-transfer-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.file-transfer-section input {
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+}
+
+.file-transfer-section button {
+    padding: 10px 14px;
+    cursor: pointer;
+}
+
+.file-transfer-divider {
+    text-align: center;
+    margin: 15px 0;
+    opacity: 0.6;
+}
+
+.file-search-results {
+    margin-top: 15px;
+}
+
+.file-result-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 15px;
+    padding: 12px;
+    margin-bottom: 10px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+}
+
+.file-result-info {
+    min-width: 0;
+}
+
+.file-result-name {
+    font-weight: 600;
+}
+
+.file-result-size {
+    font-size: 13px;
+    opacity: 0.7;
+}
+
+.file-result-path {
+    font-size: 12px;
+    opacity: 0.6;
+    word-break: break-all;
+}
+
+.file-transfer-result-btn,
+.download-file-btn {
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+}
 
 button {
     font: inherit;

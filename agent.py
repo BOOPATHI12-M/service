@@ -18,15 +18,13 @@ from datetime import datetime, timedelta
 import psutil
 import json
 import requests
+import mimetypes
 
 # ===========================================================================
 #  API PATH  — set this to your backend (server.js) URL before building the exe.
 #  This is the ONLY thing you must change to point the agent at a hosted server.
-#     local:    http://localhost:8000
-#     hosted:   https://your-domain.example     (or  http://<server-ip>:8000)
-#     render:   https://<service>.onrender.com
-#  Replace the default below with the public domain Render assigns to the
-#  service (Render dashboard -> service -> Settings -> Custom Domains).
+#     local:   http://localhost:8000
+#     hosted:  https://your-domain.example      (or  http://<server-ip>:8000)
 # ===========================================================================
 API_BASE = os.environ.get("API_BASE", "https://laptop-control.onrender.com")
 APP_NAME = "monitor-agent"  # name of the agent in the Windows registry (for auto-start)
@@ -42,7 +40,18 @@ POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "0.5"))   # seconds
 MAIL_SEND_DELAY = float(os.environ.get("MAIL_SEND_DELAY", "7"))
 
 HEADERS = {"X-Agent-Key": AGENT_KEY}
+# ============================================================================
+# TOOL 12 — FILE TRANSFER CONFIGURATION
+# ============================================================================
 
+ALLOWED_ROOTS = [
+    os.path.expanduser("~/Documents"),
+    os.path.expanduser("~/Downloads"),
+    os.path.expanduser("~/Desktop"),
+]
+
+# Maximum file size allowed for transfer
+MAX_FILE_SIZE = 15 * 1024 * 1024  # 15 MB
 
 # ===========================================================================
 #  AGENT IDENTITY  — how this laptop identifies itself so the dashboard can
@@ -183,7 +192,106 @@ def tool_cpu():
 
     return "json", json.dumps(data)
 
+def is_allowed_path(path):
+    """
+    Check whether a file is inside one of the allowed directories.
+    """
 
+    if not isinstance(path, str):
+        return None
+
+    path = path.strip()
+
+    if not path:
+        return None
+
+    path = os.path.abspath(
+        os.path.expanduser(path)
+    )
+
+    for root in ALLOWED_ROOTS:
+
+        root = os.path.abspath(root)
+
+        try:
+            if os.path.commonpath(
+                [path, root]
+            ) == root:
+
+                return path
+
+        except ValueError:
+            pass
+
+    return None
+def search_files(filename):
+    """
+    Search for an exact filename inside the allowed directories.
+
+    Only files <= MAX_FILE_SIZE are returned.
+    """
+
+    if not isinstance(filename, str):
+        return []
+
+    filename = filename.strip()
+
+    if not filename:
+        return []
+
+    results = []
+
+    filename_lower = filename.lower()
+
+    for root in ALLOWED_ROOTS:
+
+        if not os.path.exists(root):
+            continue
+
+        for current_root, dirs, files in os.walk(root):
+
+            # Don't follow symbolic-link directories
+            dirs[:] = [
+                d
+                for d in dirs
+                if not os.path.islink(
+                    os.path.join(
+                        current_root,
+                        d
+                    )
+                )
+            ]
+
+            for file in files:
+
+                # Exact filename match
+                if file.lower() != filename_lower:
+                    continue
+
+                full_path = os.path.join(
+                    current_root,
+                    file
+                )
+
+                try:
+
+                    size = os.path.getsize(
+                        full_path
+                    )
+
+                    if size <= MAX_FILE_SIZE:
+
+                        results.append({
+                            "name": file,
+                            "path": full_path,
+                            "size": size
+                        })
+
+                except OSError:
+                    continue
+
+    # Maximum 50 search results
+    return results[:50]
 def tool_camera():
     """3 — grab one frame from the default camera -> base64 JPEG."""
     import cv2
@@ -277,7 +385,185 @@ def tool_usb():
             drives.append(info)
 
     return "json", json.dumps(drives)
+def transfer_file(path):
+    """
+    Tool 12 — transfer one authorized file.
 
+    Only files inside ALLOWED_ROOTS are permitted.
+    Maximum size: MAX_FILE_SIZE.
+    """
+
+    if not isinstance(path, str):
+        return {
+            "error": "Invalid file path."
+        }
+
+    path = path.strip()
+
+    if not path:
+        return {
+            "error": "No file path provided."
+        }
+
+    # Validate path
+    safe_path = is_allowed_path(path)
+
+    if not safe_path:
+        return {
+            "error":
+                "File is outside the allowed directories."
+        }
+
+    # Check file exists
+    if not os.path.isfile(safe_path):
+        return {
+            "error":
+                "File does not exist."
+        }
+
+    # Get file size
+    try:
+
+        size = os.path.getsize(
+            safe_path
+        )
+
+    except OSError as e:
+
+        return {
+            "error":
+                f"Could not read file information: {e}"
+        }
+
+    # File size limit
+    if size > MAX_FILE_SIZE:
+
+        return {
+            "error":
+                f"File is larger than "
+                f"{MAX_FILE_SIZE // (1024 * 1024)} MB."
+        }
+
+    # Read file
+    try:
+
+        with open(
+            safe_path,
+            "rb"
+        ) as f:
+
+            raw_data = f.read()
+
+        # Convert binary -> Base64
+        encoded = base64.b64encode(
+            raw_data
+        ).decode("ascii")
+
+        # Detect MIME type
+        mime, _ = mimetypes.guess_type(
+            safe_path
+        )
+
+        if not mime:
+            mime = "application/octet-stream"
+
+        return {
+            "filename":
+                os.path.basename(
+                    safe_path
+                ),
+
+            "size":
+                size,
+
+            "mime":
+                mime,
+
+            "data":
+                encoded
+        }
+
+    except PermissionError:
+
+        return {
+            "error":
+                "Permission denied while reading the file."
+        }
+
+    except OSError as e:
+
+        return {
+            "error":
+                f"Could not read file: {e}"
+        }
+def tool_file_transfer(payload):
+    """
+    Tool 12 dispatcher.
+
+    Supported actions:
+        search
+        download
+    """
+
+    payload = payload or {}
+
+    action = payload.get(
+        "action"
+    )
+
+    # ------------------------------------------------------------------------
+    # SEARCH
+    # ------------------------------------------------------------------------
+
+    if action == "search":
+
+        name = payload.get(
+            "name",
+            ""
+        )
+
+        result = search_files(
+            name
+        )
+
+        return (
+            "json",
+            json.dumps(result)
+        )
+
+
+    # ------------------------------------------------------------------------
+    # DOWNLOAD
+    # ------------------------------------------------------------------------
+
+    elif action == "download":
+
+        path = payload.get(
+            "path",
+            ""
+        )
+
+        result = transfer_file(
+            path
+        )
+
+        return (
+            "json",
+            json.dumps(result)
+        )
+
+
+    # ------------------------------------------------------------------------
+    # UNKNOWN ACTION
+    # ------------------------------------------------------------------------
+
+    return (
+        "json",
+        json.dumps({
+            "error":
+                "Unknown file-transfer action."
+        })
+    )
 def tool_history():
     """4 — recent browser history (Chrome/Edge/Brave) -> JSON list."""
     import json
@@ -364,83 +650,21 @@ def tool_email(payload):
     except Exception as e:
         return "text", f"Could not send email: {e}"
 
-import mss
-from aiortc import VideoStreamTrack
-from av import VideoFrame
-import numpy as np
-import asyncio
-import fractions
-import time
-
-
-class ScreenTrack(VideoStreamTrack):
-
-    def __init__(self, monitor_number=1, fps=30):
-        super().__init__()
-
-        self.fps = fps
-        self.sct = mss.MSS()
-        self.monitor = self.sct.monitors[monitor_number]
-
-        self.frame_time = 1 / fps
-        self.last_frame_time = 0
-
-    async def recv(self):
-
-        # Maintain FPS
-        now = time.time()
-
-        wait = self.frame_time - (now - self.last_frame_time)
-
-        if wait > 0:
-            await asyncio.sleep(wait)
-
-        self.last_frame_time = time.time()
-
-        # Capture screen
-        screenshot = self.sct.grab(self.monitor)
-
-        # Convert screenshot to NumPy
-        img = np.array(screenshot)
-
-        # BGRA -> RGB
-        img = img[:, :, :3]
-        img = img[:, :, ::-1]
-
-        # Create WebRTC frame
-        frame = VideoFrame.from_ndarray(
-            img,
-            format="rgb24"
-        )
-
-        # WebRTC timestamp
-        frame.pts = int(
-            time.time() * 90000
-        )
-
-        frame.time_base = fractions.Fraction(
-            1,
-            90000
-        )
-
-        return frame
-
-
-# Create the screen stream once
-_screen_track = ScreenTrack(
-    monitor_number=1,
-    fps=30
-)
-
 
 def tool_screen():
-    """
-    Return the live WebRTC screen track.
+    """6 — one screen frame -> base64 JPEG (the browser re-requests to 'stream')."""
+    import cv2
+    import numpy as np
+    import mss
 
-    This does NOT create JPEG/base64 images.
-    """
+    with mss.mss() as sct:
+        monitor = sct.monitors[1]
+        img = np.array(sct.grab(monitor))
+        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 60])
+    return "image", "data:image/jpeg;base64," + b64(buf.tobytes())
 
-    return _screen_track
+
 # ---------------------------------------------------------------------------
 #  Safe terminal (tool 9) — run ONE whitelisted command for monitoring.
 #  Only the commands below are permitted; anything else is refused. This keeps
@@ -807,6 +1031,7 @@ DISPATCH = {
     8: lambda payload: tool_camera_stream(),
     9: lambda payload: tool_safe_terminal(payload),
     10: lambda payload: tool_camera_webrtc(payload),
+    12: lambda payload: tool_file_transfer(payload),
 }
 
 
