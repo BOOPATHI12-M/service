@@ -28,9 +28,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller
+
           if (Test-Path requirements.txt) {
             pip install -r requirements.txt
           }
+
+      - name: Verify required files
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "agent.spec")) {
+            throw "agent.spec not found."
+          }
+
+          if (-not (Test-Path "agent.ico")) {
+            throw "agent.ico not found."
+          }
+
+          if (-not (Test-Path "agent.py")) {
+            throw "agent.py not found."
+          }
+
+          Write-Host "Required files found."
 
       - name: Build application
         shell: pwsh
@@ -42,7 +60,7 @@ jobs:
         run: |
           if (-not (Test-Path "dist/service.exe")) {
             Write-Host "Contents of dist/:"
-            
+
             if (Test-Path dist) {
               Get-ChildItem -Recurse dist |
                 Format-Table -AutoSize |
@@ -50,14 +68,20 @@ jobs:
                 Write-Host
             }
             else {
-              Write-Host "  (dist/ was never created)"
+              Write-Host "dist/ was never created."
             }
 
             throw "dist/service.exe was not created by PyInstaller."
           }
 
           $size = (Get-Item "dist/service.exe").Length / 1MB
-          Write-Host ("Built dist/service.exe ({0:N1} MB)" -f $size)
+
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host " Build successful!"
+          Write-Host " File: dist/service.exe"
+          Write-Host (" Size: {0:N1} MB" -f $size)
+          Write-Host "========================================"
 
       - name: Upload executable to GitHub Release
         uses: softprops/action-gh-release@v2
