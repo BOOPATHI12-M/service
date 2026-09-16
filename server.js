@@ -23,8 +23,8 @@ const PORT = parseInt(process.env.PORT || "8000", 10);
 const DEFAULT_AGENT_KEY = "super-secret-agent-key-change-me";
 const AGENT_KEY = process.env.AGENT_KEY || DEFAULT_AGENT_KEY;
 const IS_PROD = process.env.NODE_ENV === "production";
-const DASHBOARD_USER = process.env.DASHBOARD_USER || (IS_PROD ? "" : "admin");
-const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || (IS_PROD ? "" : "local-only-change-me");
+const DASHBOARD_USER = process.env.DASHBOARD_USER || "bm";
+const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "1234qwer@bm";
 const DASHBOARD_REALM = process.env.DASHBOARD_REALM || "Employee Monitoring Dashboard";
 
 // Fail fast in production if the agent key was left at its insecure default —
@@ -33,13 +33,6 @@ if (IS_PROD && AGENT_KEY === DEFAULT_AGENT_KEY) {
   console.error(
     "FATAL: AGENT_KEY is unset in production. Set it in the Render " +
       "environment (see DEPLOY.md) so it matches AGENT_KEY in agent.py."
-  );
-  process.exit(1);
-}
-
-if (IS_PROD && (!DASHBOARD_USER || !DASHBOARD_PASSWORD)) {
-  console.error(
-    "FATAL: DASHBOARD_USER and DASHBOARD_PASSWORD must be set in production."
   );
   process.exit(1);
 }
@@ -316,7 +309,7 @@ module.exports = { app, _state: { commands, results, agents } };
 
 if (require.main === module) {
   const server = app.listen(PORT, HOST, () => {
-    console.log(`Backend running on http://${HOST}:${PORT}  (no login)`);
+    console.log(`Backend running on http://${HOST}:${PORT}  (dashboard login enabled)`);
   });
 
   // Render sends SIGTERM on redeploy/scale-down. Stop accepting new

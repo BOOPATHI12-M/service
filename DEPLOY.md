@@ -92,9 +92,10 @@ paths (`/api/...`), so it works under whichever domain serves it.
 
 `server.js` is hardened for a hosted, always-behind-a-proxy deployment:
 
-- **Fails fast on a missing key.** With `NODE_ENV=production` (set in
-  `render.yaml`), the process exits at startup if `AGENT_KEY` is still the
-  insecure default — so a misconfigured deploy never goes live open.
+- **Protects the dashboard.** The dashboard requires Basic Auth using
+  `DASHBOARD_USER` and `DASHBOARD_PASSWORD`. Render receives these values from
+  `render.yaml`; the server also falls back to the configured `bm` credentials
+  if an existing Render service has not synchronized its Blueprint variables.
 - **Trusts the platform proxy** (`trust proxy`), so `req.ip`/`req.protocol`
   reflect the real client behind Render's TLS terminator.
 - **Health endpoint** `GET /healthz` returns `{status, uptime_secs, agents,
