@@ -40,7 +40,7 @@ jobs:
       - name: Verify executable was created
         shell: pwsh
         run: |
-          if (-not (Test-Path "dist/BM-Agent.exe")) {
+          if (-not (Test-Path "dist/service.exe")) {
             Write-Host "Contents of dist/:"
             
             if (Test-Path dist) {
@@ -53,14 +53,14 @@ jobs:
               Write-Host "  (dist/ was never created)"
             }
 
-            throw "dist/BM-Agent.exe was not created by PyInstaller."
+            throw "dist/service.exe was not created by PyInstaller."
           }
 
-          $size = (Get-Item "dist/BM-Agent.exe").Length / 1MB
-          Write-Host ("Built dist/BM-Agent.exe ({0:N1} MB)" -f $size)
+          $size = (Get-Item "dist/service.exe").Length / 1MB
+          Write-Host ("Built dist/service.exe ({0:N1} MB)" -f $size)
 
       - name: Upload executable to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
-          files: dist/BM-Agent.exe
+          files: dist/service.exe
