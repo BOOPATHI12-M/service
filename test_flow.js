@@ -3,6 +3,9 @@ const http = require("http");
 const { app } = require("./server");
 
 const AGENT_KEY = process.env.AGENT_KEY || "super-secret-agent-key-change-me";
+const DASHBOARD_USER = process.env.DASHBOARD_USER || "admin";
+const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "local-only-change-me";
+const DASHBOARD_AUTH = "Basic " + Buffer.from(`${DASHBOARD_USER}:${DASHBOARD_PASSWORD}`).toString("base64");
 let passed = 0, failed = 0;
 function check(name, cond) {
   console.log((cond ? "PASS " : "FAIL ") + name);
@@ -15,7 +18,7 @@ function req(server, method, path, { body, headers } = {}) {
     const data = body ? JSON.stringify(body) : null;
     const r = http.request(
       { host: "127.0.0.1", port, method, path,
-        headers: { "Content-Type": "application/json", ...(headers || {}),
+        headers: { "Content-Type": "application/json", Authorization: DASHBOARD_AUTH, ...(headers || {}),
                    ...(data ? { "Content-Length": Buffer.byteLength(data) } : {}) } },
       (res) => {
         let buf = "";
@@ -36,6 +39,9 @@ function req(server, method, path, { body, headers } = {}) {
   const server = app.listen(0, "127.0.0.1");
   await new Promise((r) => server.once("listening", r));
   const AKEY = { "X-Agent-Key": AGENT_KEY };
+
+  check("dashboard without credentials -> 401",
+    (await req(server, "GET", "/", { headers: { Authorization: "" } })).status === 401);
 
   // Dashboard open
   const home = await req(server, "GET", "/");

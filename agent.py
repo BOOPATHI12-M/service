@@ -19,6 +19,7 @@ import psutil
 import json
 import requests
 import mimetypes
+from pathlib import Path
 
 # ===========================================================================
 #  API PATH  — set this to your backend (server.js) URL before building the exe.
@@ -52,6 +53,110 @@ ALLOWED_ROOTS = [
 
 # Maximum file size allowed for transfer
 MAX_FILE_SIZE = 15 * 1024 * 1024  # 15 MB
+
+# ===========================================================================
+#  SELF-UPDATE CONFIGURATION
+# ===========================================================================
+CURRENT_VERSION = "1.0.3"
+
+GITHUB_OWNER = "BOOPATHI12-M"
+GITHUB_REPO = "service"
+
+LATEST_RELEASE_API = (
+    f"https://api.github.com/repos/"
+    f"{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
+)
+
+UPDATE_ASSET_URL = (
+    f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}"
+    f"/releases/latest/download/service.exe"
+)
+
+
+def get_latest_version():
+    """Get the latest release tag from GitHub."""
+    try:
+        response = requests.get(LATEST_RELEASE_API, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        tag = data.get("tag_name", "")
+        return tag.lstrip("v")
+    except Exception as e:
+        print(f"[UPDATE] Version check failed: {e}")
+        return None
+
+
+def version_tuple(version):
+    """Convert 1.2.3 -> (1, 2, 3)."""
+    try:
+        return tuple(int(x) for x in version.split("."))
+    except Exception:
+        return (0, 0, 0)
+
+
+def download_update(target_path):
+    """Download the latest EXE."""
+    try:
+        print("[UPDATE] Downloading new version...")
+        response = requests.get(UPDATE_ASSET_URL, stream=True, timeout=60)
+        response.raise_for_status()
+
+        with open(target_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    f.write(chunk)
+
+        print("[UPDATE] Download complete.")
+        return True
+    except Exception as e:
+        print(f"[UPDATE] Download failed: {e}")
+        return False
+
+
+def update_self():
+    """Check for and install a newer frozen executable."""
+    if not getattr(sys, "frozen", False):
+        return
+
+    latest_version = get_latest_version()
+    if not latest_version:
+        return
+
+    print(f"[UPDATE] Current: {CURRENT_VERSION}")
+    print(f"[UPDATE] Latest:  {latest_version}")
+
+    if version_tuple(latest_version) <= version_tuple(CURRENT_VERSION):
+        print("[UPDATE] Already up to date.")
+        return
+
+    print(f"[UPDATE] New version available: {latest_version}")
+
+    current_exe = Path(sys.executable)
+    temp_dir = Path(tempfile.gettempdir()) / "bm_agent_update"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    new_exe = temp_dir / "service_new.exe"
+
+    if not download_update(new_exe):
+        return
+
+    updater_script = temp_dir / "update.bat"
+    script = f"""@echo off
+timeout /t 2 /nobreak >nul
+
+copy /Y "{new_exe}" "{current_exe}" >nul
+
+start "" "{current_exe}"
+
+del "%~f0"
+"""
+    updater_script.write_text(script, encoding="utf-8")
+
+    print("[UPDATE] Restarting with new version...")
+    subprocess.Popen(
+        ["cmd.exe", "/c", str(updater_script)],
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    sys.exit(0)
 
 # ===========================================================================
 #  AGENT IDENTITY  — how this laptop identifies itself so the dashboard can
@@ -1088,6 +1193,8 @@ def register_startup():
 #  MAIN POLL LOOP
 # ===========================================================================
 def main():
+    update_self()
+
     print(f"Agent started. Polling {API_BASE} every {POLL_INTERVAL}s. Ctrl+C to stop.")
     print("Application Started")
 

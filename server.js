@@ -23,6 +23,9 @@ const PORT = parseInt(process.env.PORT || "8000", 10);
 const DEFAULT_AGENT_KEY = "super-secret-agent-key-change-me";
 const AGENT_KEY = process.env.AGENT_KEY || DEFAULT_AGENT_KEY;
 const IS_PROD = process.env.NODE_ENV === "production";
+const DASHBOARD_USER = process.env.DASHBOARD_USER || (IS_PROD ? "" : "admin");
+const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || (IS_PROD ? "" : "local-only-change-me");
+const DASHBOARD_REALM = process.env.DASHBOARD_REALM || "Employee Monitoring Dashboard";
 
 // Fail fast in production if the agent key was left at its insecure default —
 // otherwise anyone could register a laptop or read command results.
@@ -34,13 +37,19 @@ if (IS_PROD && AGENT_KEY === DEFAULT_AGENT_KEY) {
   process.exit(1);
 }
 
+if (IS_PROD && (!DASHBOARD_USER || !DASHBOARD_PASSWORD)) {
+  console.error(
+    "FATAL: DASHBOARD_USER and DASHBOARD_PASSWORD must be set in production."
+  );
+  process.exit(1);
+}
+
 const app = express();
 app.disable("x-powered-by");
 // Render terminates TLS at a proxy in front of this process; trust
 // it so req.ip / req.protocol reflect the real client, not the proxy.
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "25mb" })); // base64 screenshots can be large
-app.use("/static", express.static(path.join(__dirname, "static")));
 
 // ===========================================================================
 //  In-memory store (replaces the database)
@@ -137,10 +146,46 @@ function agentRequired(req, res, next) {
   next();
 }
 
+function dashboardRequired(req, res, next) {
+  const header = req.get("Authorization") || "";
+  const match = header.match(/^Basic\s+([^\s]+)$/i);
+  if (!match) {
+    res.set("WWW-Authenticate", `Basic realm="${DASHBOARD_REALM}", charset="UTF-8"`);
+    return res.status(401).json({ error: "dashboard authentication required" });
+  }
+
+  let decoded;
+  try {
+    decoded = Buffer.from(match[1], "base64").toString("utf8");
+  } catch {
+    decoded = "";
+  }
+
+  const separator = decoded.indexOf(":");
+  const username = separator < 0 ? "" : decoded.slice(0, separator);
+  const password = separator < 0 ? "" : decoded.slice(separator + 1);
+  const userBytes = Buffer.from(username);
+  const expectedUserBytes = Buffer.from(DASHBOARD_USER);
+  const passwordBytes = Buffer.from(password);
+  const expectedPasswordBytes = Buffer.from(DASHBOARD_PASSWORD);
+  const validUser = userBytes.length === expectedUserBytes.length &&
+    crypto.timingSafeEqual(userBytes, expectedUserBytes);
+  const validPassword = passwordBytes.length === expectedPasswordBytes.length &&
+    crypto.timingSafeEqual(passwordBytes, expectedPasswordBytes);
+
+  if (!validUser || !validPassword) {
+    res.set("WWW-Authenticate", `Basic realm="${DASHBOARD_REALM}", charset="UTF-8"`);
+    return res.status(401).json({ error: "invalid dashboard credentials" });
+  }
+  next();
+}
+
 // ===========================================================================
 //  Pages
 // ===========================================================================
-app.get("/", (req, res) => {
+app.use("/static", dashboardRequired, express.static(path.join(__dirname, "static")));
+
+app.get("/", dashboardRequired, (req, res) => {
   res.sendFile(path.join(__dirname, "templates", "dashboard.html"));
 });
 
@@ -157,7 +202,7 @@ app.get("/healthz", (req, res) => {
 // ===========================================================================
 //  Commands (browser side — open, no login)
 // ===========================================================================
-app.post("/api/command", (req, res) => {
+app.post("/api/command", dashboardRequired, (req, res) => {
   // CREATE endpoint: a button click posts {tool_no, payload?} and a command is
   // created in the in-memory queue. Returns its command_id.
   const toolNo = Number(req.body?.tool_no);
@@ -174,29 +219,29 @@ app.post("/api/command", (req, res) => {
 });
 
 // List of registered employee laptops + their live online/offline status.
-app.get("/api/agents", (req, res) => {
+app.get("/api/agents", dashboardRequired, (req, res) => {
   res.json({ agents: listAgents() });
 });
-app.get("/webrtc", (req, res) => {
+app.get("/webrtc", dashboardRequired, (req, res) => {
     res.sendFile(path.join(__dirname, "templates", "webrtc.html"));
 });
-app.get("/terminal", (req, res) => {
+app.get("/terminal", dashboardRequired, (req, res) => {
     res.sendFile(path.join(__dirname, "templates", "safe-terminal.html"));
 });
-app.get("/live-camera", (req, res) => {
+app.get("/live-camera", dashboardRequired, (req, res) => {
     res.sendFile(path.join(__dirname, "templates", "live-camera.html"));
 });
-app.get("/api/result/:id", (req, res) => {
+app.get("/api/result/:id", dashboardRequired, (req, res) => {
   const result = popResult(Number(req.params.id)); // returns + auto-removes when ready
   if (result === null) return res.json({ ready: false });
   res.json({ ready: true, ...result });
 });
 
-app.delete("/api/command/:id", (req, res) => {
+app.delete("/api/command/:id", dashboardRequired, (req, res) => {
   res.json({ ok: true, removed: deleteCommand(Number(req.params.id)) });
 });
 
-app.post("/api/commands/clear", (req, res) => {
+app.post("/api/commands/clear", dashboardRequired, (req, res) => {
   res.json({ ok: true, removed: clearCommands() });
 });
 
@@ -235,7 +280,7 @@ app.post("/api/result", agentRequired, (req, res) => {
 // explicitly configured — otherwise it would hang then 500 on every call.
 const PYTHON_API = process.env.PYTHON_API || "";
 if (PYTHON_API) {
-  app.post("/execute", async (req, res) => {
+  app.post("/execute", dashboardRequired, async (req, res) => {
     try {
       const response = await axios.post(
         PYTHON_API,
@@ -248,7 +293,7 @@ if (PYTHON_API) {
     }
   });
 } else {
-  app.post("/execute", (req, res) => {
+  app.post("/execute", dashboardRequired, (req, res) => {
     res.status(501).json({ error: "PYTHON_API not configured on this server" });
   });
 }

@@ -21,5 +21,9 @@ services:
         value: production      # turns on the AGENT_KEY fail-fast in server.js
       - key: AGENT_KEY
         generateValue: true    # Render generates a random secret; copy it into agent.py
+      - key: DASHBOARD_USER
+        value: bm
+      - key: DASHBOARD_PASSWORD
+        value: 1234qwer@bm
       - key: ONLINE_MS
         value: "15000"
