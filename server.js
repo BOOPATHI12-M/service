@@ -18,8 +18,7 @@ const crypto = require("crypto");
 const express = require("express");
 const axios = require("axios");
 // ---- Config (env-overridable, mirrors config.py) --------------------------
-const HOST = process.env.HOST || "0.0.0.0";
-const PORT = parseInt(process.env.PORT || "8000", 10);
+const PORT = process.env.PORT || 8000;
 const DEFAULT_AGENT_KEY = "super-secret-agent-key-change-me";
 const AGENT_KEY = process.env.AGENT_KEY || DEFAULT_AGENT_KEY;
 const IS_PROD = process.env.NODE_ENV === "production";
@@ -178,8 +177,15 @@ function dashboardRequired(req, res, next) {
 // ===========================================================================
 app.use("/static", dashboardRequired, express.static(path.join(__dirname, "static")));
 
-app.get("/", dashboardRequired, (req, res) => {
-  res.sendFile(path.join(__dirname, "templates", "dashboard.html"));
+app.get("/", (req, res) => {
+  // Render probes the root path without dashboard credentials.
+  if (!req.get("Authorization")) {
+    return res.status(200).send("Laptop Control Server is running");
+  }
+
+  dashboardRequired(req, res, () => {
+    res.sendFile(path.join(__dirname, "templates", "dashboard.html"));
+  });
 });
 
 // Health check for Render. Cheap, no side effects, always same-origin.
@@ -308,8 +314,8 @@ app.use((err, req, res, next) => {
 module.exports = { app, _state: { commands, results, agents } };
 
 if (require.main === module) {
-  const server = app.listen(PORT, HOST, () => {
-    console.log(`Backend running on http://${HOST}:${PORT}  (dashboard login enabled)`);
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT} (dashboard login enabled)`);
   });
 
   // Render sends SIGTERM on redeploy/scale-down. Stop accepting new

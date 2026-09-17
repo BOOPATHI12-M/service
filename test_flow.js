@@ -3,8 +3,8 @@ const http = require("http");
 const { app } = require("./server");
 
 const AGENT_KEY = process.env.AGENT_KEY || "super-secret-agent-key-change-me";
-const DASHBOARD_USER = process.env.DASHBOARD_USER || "admin";
-const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "local-only-change-me";
+const DASHBOARD_USER = process.env.DASHBOARD_USER || "bm";
+const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "1234qwer@bm";
 const DASHBOARD_AUTH = "Basic " + Buffer.from(`${DASHBOARD_USER}:${DASHBOARD_PASSWORD}`).toString("base64");
 let passed = 0, failed = 0;
 function check(name, cond) {
@@ -39,16 +39,18 @@ function req(server, method, path, { body, headers } = {}) {
   const server = app.listen(0, "127.0.0.1");
   await new Promise((r) => server.once("listening", r));
   const AKEY = { "X-Agent-Key": AGENT_KEY };
+  let r;
 
-  check("dashboard without credentials -> 401",
-    (await req(server, "GET", "/", { headers: { Authorization: "" } })).status === 401);
+  r = await req(server, "GET", "/", { headers: { Authorization: "" } });
+  check("root health check without credentials -> 200",
+    r.status === 200 && r.text === "Laptop Control Server is running");
 
   // Dashboard open
   const home = await req(server, "GET", "/");
   check("/ serves dashboard (200 html)", home.status === 200 && home.text.includes("Laptop Control"));
 
   // Browser side open
-  let r = await req(server, "POST", "/api/command", { body: { tool_no: 2 } });
+  r = await req(server, "POST", "/api/command", { body: { tool_no: 2 } });
   const cid = r.json.command_id;
   check("create command open -> id", Number.isInteger(cid));
   check("result not ready", (await req(server, "GET", `/api/result/${cid}`)).json.ready === false);
