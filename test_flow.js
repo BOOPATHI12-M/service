@@ -42,12 +42,14 @@ function req(server, method, path, { body, headers } = {}) {
   let r;
 
   r = await req(server, "GET", "/", { headers: { Authorization: "" } });
-  check("root health check without credentials -> 200",
-    r.status === 200 && r.text === "Laptop Control Server is running");
+  check("root login page without credentials -> 200",
+    r.status === 200 && r.text.includes("Employee Monitoring"));
+  r = await req(server, "GET", "/healthz", { headers: { Authorization: "" } });
+  check("health check without credentials -> 200", r.status === 200 && r.json.status === "ok");
 
-  // Dashboard open
-  const home = await req(server, "GET", "/");
-  check("/ serves dashboard (200 html)", home.status === 200 && home.text.includes("Laptop Control"));
+  // Authenticated dashboard
+  const home = await req(server, "GET", "/dashboard");
+  check("/dashboard serves dashboard (200 html)", home.status === 200 && home.text.includes("Tools"));
 
   // Browser side open
   r = await req(server, "POST", "/api/command", { body: { tool_no: 2 } });

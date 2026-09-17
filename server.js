@@ -25,6 +25,7 @@ const IS_PROD = process.env.NODE_ENV === "production";
 const DASHBOARD_USER = process.env.DASHBOARD_USER || "bm";
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "1234qwer@bm";
 const DASHBOARD_REALM = process.env.DASHBOARD_REALM || "Employee Monitoring Dashboard";
+const SESSION_COOKIE = "dashboard_session";
 
 // Fail fast in production if the agent key was left at its insecure default —
 // otherwise anyone could register a laptop or read command results.
@@ -42,6 +43,7 @@ app.disable("x-powered-by");
 // it so req.ip / req.protocol reflect the real client, not the proxy.
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "25mb" })); // base64 screenshots can be large
+app.use(express.urlencoded({ extended: false }));
 
 // ===========================================================================
 //  In-memory store (replaces the database)
@@ -49,6 +51,7 @@ app.use(express.json({ limit: "25mb" })); // base64 screenshots can be large
 let seq = 0;
 const commands = new Map(); // id -> { agent_id, tool_no, payload, status: pending|taken|done }
 const results = new Map();  // command_id -> { content_type, data }
+const sessions = new Map(); // session token -> created timestamp
 
 // ---- Registered employee laptops (agents) ---------------------------------
 // id -> { id, username, hostname, os, first_seen, last_seen }
@@ -139,6 +142,19 @@ function agentRequired(req, res, next) {
 }
 
 function dashboardRequired(req, res, next) {
+  const cookies = Object.fromEntries(
+    (req.get("Cookie") || "").split(";").filter(Boolean).map((part) => {
+      const separator = part.indexOf("=");
+      return [
+        part.slice(0, separator).trim(),
+        decodeURIComponent(part.slice(separator + 1).trim()),
+      ];
+    })
+  );
+  if (cookies[SESSION_COOKIE] && sessions.has(cookies[SESSION_COOKIE])) {
+    return next();
+  }
+
   const header = req.get("Authorization") || "";
   const match = header.match(/^Basic\s+([^\s]+)$/i);
   if (!match) {
@@ -172,20 +188,93 @@ function dashboardRequired(req, res, next) {
   next();
 }
 
+function credentialsMatch(username, password) {
+  const userBytes = Buffer.from(username || "");
+  const expectedUserBytes = Buffer.from(DASHBOARD_USER);
+  const passwordBytes = Buffer.from(password || "");
+  const expectedPasswordBytes = Buffer.from(DASHBOARD_PASSWORD);
+  return userBytes.length === expectedUserBytes.length &&
+    passwordBytes.length === expectedPasswordBytes.length &&
+    crypto.timingSafeEqual(userBytes, expectedUserBytes) &&
+    crypto.timingSafeEqual(passwordBytes, expectedPasswordBytes);
+}
+
+const LOGIN_PAGE = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Employee Monitoring Login</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #101827; color: #eef4ff; }
+    main { width: min(360px, calc(100% - 40px)); padding: 32px; border: 1px solid #30415e; border-radius: 12px; background: #172338; box-shadow: 0 18px 45px #0005; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    p { color: #aab8ce; margin: 0 0 24px; }
+    label { display: block; margin: 14px 0 6px; color: #c8d5e8; }
+    input { width: 100%; box-sizing: border-box; padding: 11px; border: 1px solid #526682; border-radius: 6px; background: #0e1726; color: #fff; font-size: 15px; }
+    button { width: 100%; margin-top: 22px; padding: 11px; border: 0; border-radius: 6px; background: #2bb673; color: #07140d; font-weight: 700; font-size: 15px; cursor: pointer; }
+    .error { margin: 0 0 12px; color: #ff9d9d; }
+  </style>
+</head>
+<body><main>
+  <h1>Employee Monitoring</h1>
+  <p>Sign in to open the control dashboard.</p>
+  ${"{{ERROR}}"}
+  <form method="post" action="/login">
+    <label for="username">Username</label>
+    <input id="username" name="username" autocomplete="username" required>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+  </form>
+</main></body></html>`;
+
+function sendLoginPage(res, error = "") {
+  const errorHtml = error ? `<p class="error">${error}</p>` : "";
+  res.status(200).type("html").send(LOGIN_PAGE.replace("{{ERROR}}", errorHtml));
+}
+
 // ===========================================================================
 //  Pages
 // ===========================================================================
 app.use("/static", dashboardRequired, express.static(path.join(__dirname, "static")));
 
 app.get("/", (req, res) => {
-  // Render probes the root path without dashboard credentials.
-  if (!req.get("Authorization")) {
-    return res.status(200).send("Laptop Control Server is running");
+  if (req.get("Authorization") || req.get("Cookie")) {
+    return dashboardRequired(req, res, () => res.redirect("/dashboard"));
+  }
+  sendLoginPage(res);
+});
+
+app.get("/login", (req, res) => {
+  sendLoginPage(res);
+});
+
+app.post("/login", (req, res) => {
+  const username = String(req.body?.username || "");
+  const password = String(req.body?.password || "");
+  if (!credentialsMatch(username, password)) {
+    return sendLoginPage(res, "Invalid username or password.");
   }
 
-  dashboardRequired(req, res, () => {
-    res.sendFile(path.join(__dirname, "templates", "dashboard.html"));
-  });
+  const token = crypto.randomBytes(32).toString("hex");
+  sessions.set(token, Date.now());
+  const secure = IS_PROD ? "; Secure" : "";
+  res.set("Set-Cookie", `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax${secure}`);
+  res.redirect("/dashboard");
+});
+
+app.post("/logout", (req, res) => {
+  const cookies = req.get("Cookie") || "";
+  const match = cookies.match(new RegExp(`${SESSION_COOKIE}=([^;]+)`));
+  if (match) sessions.delete(decodeURIComponent(match[1]));
+  res.set("Set-Cookie", `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`);
+  res.redirect("/");
+});
+
+app.get("/dashboard", dashboardRequired, (req, res) => {
+  res.sendFile(path.join(__dirname, "templates", "dashboard.html"));
 });
 
 // Health check for Render. Cheap, no side effects, always same-origin.
